@@ -18,9 +18,7 @@ Implement gradient descent methodoly
 
 try:
     from IPython import get_ipython
-    # get_ipython().magic('clear')
     get_ipython().run_line_magic('reset','-f')
-    # get_ipython().magic('reset -f')
 except:
     pass
 
@@ -28,24 +26,13 @@ import sys
 # # sys.path.insert(0, 'F:/Work/Programmation/Presolar grains/Python functions/')
 # sys.path.insert(0,'F:/Work/Programmation/Presolar grains/Simulations PG/')
 
-# import h5py #Import necessary module to HDF5 datda extraction
 import os
-# sys.path.insert(0, os.path.abspath(__file__))
-# print(os.getcwd())
-# print('abspath:     ', os.path.abspath(__file__))
 import numpy as np
 import pandas as pd  # enables the use of dataframe
-# from scipy import sparse as sp
 import matplotlib
-# matplotlib.use("GTK4Agg")
 import matplotlib.pyplot as plt  # Enables plotting of data
-from mpl_toolkits import mplot3d
-from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.backends.backend_pdf import PdfPages
-# import cv2
-# from sklearn.cluster import KMeans
 import skimage.measure
-# import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
 from matplotlib import cm
 import time
@@ -55,50 +42,9 @@ from tkinter import filedialog
 import PG_simulations_func
 from PG_simulations_func import PG_simulationv6, create_circular_mask
 
-# from sklearn.neighbors import NearestNeighbors
-# from scipy import spatial
-# from itertools import chain
-# import os #Import module that enable management of paths
-# import multiprocessing
-# from scipy.spatial import ConvexHull
-# import imageio as iio
-# import sklearn.cluster as cluster
-# import skimage as ski
-# import scipy
-# import pylab # Enables the use of the 'savefig' function
-# from random import randint
-# import glob #enables to search for specific files in directory and save their names in a list
-# import re #enables to remove part of strings and look for parts in it
-# import math
-# import seaborn as sns #to access color palette settings
-# import random
-# import matplotlib.patches as patches
-# from mpl_toolkits.axes_grid1 import make_axes_locatable
-# import matplotlib
-# import plotly.graph_objects as go
-
 
 # plt.ioff()
 matplotlib.rcParams['interactive'] = False
-
-
-def gradient_descent(target, measured_simulations, initial_simulations, learning_rate):
-
-    X = measured_simulations[0]
-    Y = measured_simulations[1]
-    Z = measured_simulations[2]
-
-    norm3D = np.asarray(((X-target[0])**2+(Y-target[1])**2+(Z-target[2])**2)**0.5) #FIXME might not be the best suited norm because of different unit and dimension. Might have to normalize
-    grad = np.array([(X-target[0])/norm3D, (Y-target[1])/norm3D, (Z-target[2])/norm3D])
-
-    # norm3D = np.asarray((((X-target[0])/target[0])**2 +
-    #                      ((Y-target[1])/target[1])**2 +
-    #                      ((Z-target[2])/target[2])**2)**0.5)
-    # grad = np.array([(X-target[0])/(norm3D*target[0]**2),
-    #                  (Y-target[1])/(norm3D*target[1]**2),
-    #                  (Z-target[2])/(norm3D*target[2]**2)])
-
-    return initial_simulations.T - learning_rate * grad.T, norm3D, grad
 
 
 def GD_AdamNesperov(target, measured_simulations, initial_simulations, learning_rate):
@@ -125,11 +71,6 @@ def GD_AdamNesperov(target, measured_simulations, initial_simulations, learning_
 
 
 if __name__ == "__main__":
-
-     # cProfile.run('main()',sort='cumtime')
-
-     # Close all open figures
-     # plt.ioff()
     plt.close("all")
 
 #%% Grains and acquisition characteristics
@@ -152,7 +93,6 @@ if __name__ == "__main__":
     #---- Number of outer and inner iterations
     iterations = 3
     zoom_iteration = 10
-    # c = cm.rainbow(np.linspace(0, 1, zoom_iteration))
     c = cm.rainbow(np.linspace(0, 1, Nb_PG))
 
     #---- Legend of summary figure (fres) for each measured grain
@@ -161,15 +101,12 @@ if __name__ == "__main__":
     point_inner = Line2D([0], [0], marker='s', mfc='None', mec='k', linestyle='', markersize=10)
     point_matchfinal = Line2D([0], [0], marker='o', mfc='None', mec='g', linestyle='', markersize=10)
     label_points = ['Best matches of this iteration', 'Best matches all iterations']
-    # lines.extend((point_inner, point_matchfinal))
-    # labels.extend(label_points)
 
     #--- Initialization of PDF figure summary
     pp = PdfPages(pdf_save+'.pdf')
 
     # -----------------------------------------------------------------#
     #Data call
-
     root = tk.Tk()
     root.lift()
     root.attributes('-topmost', True)
@@ -238,7 +175,6 @@ if __name__ == "__main__":
 
             it = 0
             fres, axres = plt.subplots(2, iterations,subplot_kw={"projection": "3d"})
-            # f_norm, ax_norm = plt.subplots(2,iterations)
             f_adnesp, ax_adnesp = plt.subplots(4,3)
 
             for k in range(0, iterations):
@@ -326,27 +262,15 @@ if __name__ == "__main__":
                             S = S.set_axis(col, axis=1)
                             summary = pd.concat([summary, S], axis=0, ignore_index=True)
 
-                        # ax[0,2].text(0.5,0.65,"Presolar Grain Simulation #"+str(it),horizontalalignment='center',verticalalignment='center')
-                        # initial="Presolar Grain Simulation #"+str(it)+'\n'+'Image is: '+str(file.rsplit('/', 1)[1])+'\n'+ r'$\delta^{17}O$ = '+str(PG_delta[u,i])+', Diameter : '+str(PG_size[u,:])+'\n'+'Iteration : '+str(poucet)
                         initial = 'Outer Iteration : ' + str(k) + '\n' + 'Inner Iteration : ' + str(j) + '\n' "Presolar Grain Simulation #" + str(
                             it) + '\n' + 'Image is: ' + str(file.rsplit('/', 1)[1]) + '\n' + 'Number of grains : ' + str(
                             PG_size.shape[1])
 
-                        # charac = 'Compositions: '+str(PG_delta[u])+'\n'+'Sizes :'+str(PG_size[u,:])
-                        # plt.gcf().text(0.15,0.92,initial,fontsize=11)
                         f.text(0.15, 0.92, initial, fontsize=11)
-                        # f.text(0.9, 0.92, charac, fontsize=11, ha='right')
-
-                        # figManager = plt.get_current_fig_manager()
-                        # figManager.window.showMaximized()
 
                         f.set_size_inches(16, 10)
                         it =+ 1
 
-                        # im=plots[5]
-                        # im_sig=delta_map
-
-                        # pool.apply_async(pp.savefig(f, transparent=True,dpi=100),[i])
                         pp.savefig(f, transparent=True, dpi=100)
                         plt.close(f)
 
@@ -387,63 +311,6 @@ if __name__ == "__main__":
                     PG_delta = np.c_[new_simu[:,1],new_simu[:,2]]
                     PG_delta = np.where(PG_delta <= -1000, -999, PG_delta)
                     PG_delta = [PG_delta.tolist()]
-                    # num_investigated_grains = 1+j
-                    # for l in range(0, nb_closest_match):
-                    #     D = closest_match.iloc[l].filter(regex="^Initial d-.*" + elem)
-                    #     S = closest_match.iloc[l]['Initial grain size (nm)']
-                    #     Rat_iso_array = np.linspace(D*0.7, D*1.3, num_investigated_grains).T.reshape(D.size, num_investigated_grains)
-                    #     array_range = np.asarray(np.meshgrid(np.linspace(S * 0.7, S * 1.3, num_investigated_grains), Rat_iso_array[0], Rat_iso_array[1])).T.reshape(-1,D.size+1).T  # (size,ratios)
-                    #     array_range=np.where(array_range <= -1000, -999, array_range)  # If some delta values are inferior to -1000 permil they are replaced by -999 permil
-                    #     array_range=array_range.astype(int)
-                    #     PG_size.extend(array_range[0])
-                    #     if D.size == 1: PG_delta.extend(array_range.T[1])
-                    #     else: PG_delta.extend(array_range[-D.size:].T)
-
-
-                    # S_norm = summary.loc[summary['Outer Iteration']==k]
-                    # for i in range(0,S_norm.shape[0]):
-                    #     X = S_norm.iloc[i]['Measured diameter']-grain_size
-                    #     Y = S_norm.iloc[i]['d-17O/16O']-grain_delta['d-17O/16O']
-                    #     Z = S_norm.iloc[i]['d-18O/16O']-grain_delta['d-18O/16O']
-                    #     # X = (S_norm.iloc[i]['Measured diameter']-grain_size)/S_norm.iloc[i]['Measured diameter']
-                    #     # Y = (S_norm.iloc[i]['d-17O/16O']-grain_delta['d-17O/16O'])/S_norm.iloc[i]['d-17O/16O']
-                    #     # Z = (S_norm.iloc[i]['d-18O/16O']-grain_delta['d-18O/16O'])/S_norm.iloc[i]['d-18O/16O']
-                    #     norm_graph=(X**2+Y**2+Z**2)**0.5
-                    #     ax_norm[0,k].plot(S_norm.iloc[i]['Inner Iteration'],norm_graph,'o--', color=c[S_norm.iloc[i]['Inner Iteration']], linewidth=2)
-                    #     ax_norm[0,k].set_title('Outer iteration k= '+str(k), fontsize= 18)
-                    #     if k ==0 : ax_norm[0,k].set_ylabel('Eucledian norm', fontsize=14); ax_norm[1,k].set_ylabel('Standard deviation of the Eucledian norms', fontsize=14)
-                    #
-                    # for i in range(S_norm['Inner Iteration'].unique().max()+1):
-                    #     T = S_norm.loc[S_norm['Inner Iteration']==i]
-                    #     X = T['Measured diameter']-grain_size
-                    #     Y = T['d-17O/16O']-grain_delta['d-17O/16O'].item()
-                    #     Z = T['d-18O/16O']-grain_delta['d-18O/16O'].item()
-                    #     # X = (T['Measured diameter']-grain_size)/T['Measured diameter']
-                    #     # Y = (T['d-17O/16O']-grain_delta['d-17O/16O'].item())/T['d-17O/16O']
-                    #     # Z = (T['d-18O/16O']-grain_delta['d-18O/16O'].item())/T['d-18O/16O']
-                    #     norm_graph=(X**2+Y**2+Z**2)**0.5
-                    #     # ax_norm[1,k].plot(i,norm_graph.std(),'o--', color=c[i],linewidth=2)
-                    #     # ax_norm[1,k].plot(i,norm_zero.reshape(1,9)-np.asarray(norm_graph).reshape(1,9),'o--', color=c[i],linewidth=2)
-                    #     ax_norm[1,k].set_xlabel('Inner iteration', fontsize=14)
-                    #
-                    # if k == 0:
-                    #     lines.extend([Line2D([0], [0], marker='o', markersize=10, color=c[j], linewidth=3, linestyle='')])
-                    #     labels.extend(['it = '+str(j)])
-
-
-
-                    # fig = plt.figure(figsize=(10,10))
-                    # ax = plt.axes(projection='3d')
-                    # ax.plot3D(closest_match['Initial grain size (nm)'],closest_match['Initial d-17O/16O'],closest_match['Initial d-18O/16O'],'sk')
-                    # ax.plot3D(array_range[0],array_range[1], array_range[2], 'or')
-
-
-                    # N_grains_mod=N_mod[len(PG_size) % N_mod ==0][-1]
-                    # N=len(PG_size)
-                    # PG_size = np.array(PG_size).reshape(int(N/N_grains_mod), N_grains_mod)
-                    # # PG_delta = np.array(PG_delta).reshape(int(num_investigated_grains), np.shape(PG_delta)[0] / num_investigated_grains))
-                    # PG_delta = np.asarray(PG_delta).reshape(int(N/N_grains_mod), N_grains_mod, np.shape(PG_delta)[1])
-                    # del closest_match_index, closest_match
 
                 # Look for the closest match in all simulation of this outer iteration
                 #FIXME change norm formulation (Cf gradient descent)
@@ -556,12 +423,9 @@ if __name__ == "__main__":
     plt.ion()
     plt.show()
 
-
     # #------------ Saving the results of simulation
 
     pp.close()
-    # pool.close()
-    # pool.join()
 
     end = time.time()
     print('Elapsed time: ' + str(end - start) + ' s')

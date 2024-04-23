@@ -2144,90 +2144,59 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
         ind_OG_PG = []
 
     ####---- PG coordinates
-
-    PG_coor = [random.sample(range(px * hr_coeff), 2) for i in
-               range(Nb_PG)]  # Get coordinates for the required number of grains
-    it = np.ravel_multi_index(np.asarray(PG_coor).T,
-                              extracted_cts[:, :, 0].shape)  # 1D index of the coordinates in the image
+    PG_coor = np.random.choice(px * hr_coeff, size=(Nb_PG,2))
+    it = np.ravel_multi_index(np.asarray(PG_coor).T, extracted_cts[:, :, 0].shape)  # 1D index of the coordinates in the image
     coor_verif = extracted_cts[:, :, 0].take(it)  # Extracting the corresponding 16O counts of the coordinates
-    while (any(coor_verif < extracted_cts[:, :, 0].max() * th) == True) or (
-            coor_verif in ind_OG_PG):  # If any 16O counts select as the center of a grain is below the masking threshold
-        ind_badcoor = np.where(
-            coor_verif < extracted_cts[:, :, 0].max() * th)  # Location of the problematic coordinates
-        for i in ind_badcoor[0]:  # Loop over the problematic coordinates
-            PG_coor[i] = random.sample(range(px * hr_coeff), 2)  # Replacement of the problematic coordinates
+    while (any(coor_verif < extracted_cts[:, :, 0].max() * th) == True) or (coor_verif in ind_OG_PG):  # If any 16O counts select as the center of a grain is below the masking threshold
+        ind_badcoor = np.where(coor_verif < extracted_cts[:, :, 0].max() * th)  # Location of the problematic coordinates
+        PG_coor[ind_badcoor] = np.random.choice(px*hr_coeff,size=(len(ind_badcoor),2))  # Replacement of the problematic coordinates
         it = np.ravel_multi_index(np.asarray(PG_coor).T, extracted_cts[:, :, 0].shape)  # Update of the 1D index
         coor_verif = extracted_cts[:, :, 0].take(it)  # Update of the 16O counts
-    radius = list((PG_size/ 2) * 1E-3 / (
-                raster / (px * hr_coeff)))  # Radius calculation of the grains in the HR dimensions
-    mask_PG = create_circular_mask_multiple(px * hr_coeff, px * hr_coeff, center=PG_coor,
-                                            radius=radius)  # Mask creation of the grains' pixels
-
+    radius = list((PG_size/2) * 1E-3 / (raster/(px * hr_coeff)))  # Radius calculation of the grains in the HR dimensions
+    mask_PG = create_circular_mask_multiple(px * hr_coeff, px * hr_coeff, center=PG_coor,radius=radius)  # Mask creation of the grains' pixels
     imhr_ini = np.copy(extracted_cts)  # Copying the HR images channels to avoid altering them
 
-    ####---- Modifying maps counts on location of presolar grains
-    for j in range(1, N_iso):  # Loop on isotopes
-        for i in range(1, Nb_PG + 1):  # Loop on PG
-            imhr_ini[mask_PG == i, j] = extracted_cts[mask_PG == i, 0] * R[j] * (PG_delta[i - 1][j-1] / 1E3 + 1)
-
     imhr_ini_PG = np.copy(imhr_ini)  # Copying the modified images
+
+    ####---- Modifying maps counts on location of presolar grains
+    PG_delta = np.insert(PG_delta,0,[0,0],axis=0) # Ensures the non PG areas remain solar
+    R_minor = np.asarray(R[1::])
+    imhr_ini_PG[mask_PG !=0, 1::] = extracted_cts[mask_PG !=0, 0][:,None] * np.take((PG_delta*1E-3+1)*R_minor,mask_PG,axis=0)[mask_PG!=0,:]
 
     ####---- Beam blurr and Boxcar definitions
 
     # Defining the sigma parameters of the gaussian blurr
     # sig_gaussian=beam_size/(np.sqrt(8*np.log(2))) or beam_size/2.35
-    fwhm_hr = np.round((beam_size * 1E-3) / (raster / (
-                px * hr_coeff))) / 2  # the gaussian filter uses the given sigma as a radius for kernel size if radius is not specified
+    fwhm_hr = np.round((beam_size * 1E-3) / (raster / (px * hr_coeff))) / 2  # the gaussian filter uses the given sigma as a radius for kernel size if radius is not specified
     # fwhm_hr=np.round((beam_size*1E-3)/(raster/(px)))
-    sig_gaussian = fwhm_hr / (np.sqrt(8 * np.log(2)))
-
-    box_kernel = Box2DKernel(boxcar_px)  # Boxcar Kernel
-
-    imgauss_PG = np.zeros((px, px, N_iso))  # Allocation of memory for the beam blurred image
-    imboxcar_PG = np.zeros((px, px, N_iso))  # Allocation of memory for the boxcar smoothed image
+    # sig_gaussian = fwhm_hr / (np.sqrt(8 * np.log(2)))
 
     ####---- Beam blurr and Boxcar smoothing
-
     # Two options :
     # 1. A new image is created for each isotopes from the original ones. Each pixel value is used as a mean for a poisson distribution of which a new pixel value is interpolated. Then the images are beam blurred and boxcar smoothed.
     # 2. We started by applying the gaussian blurr before interpolation new values from a poisson distribution for each pixel of each isotope image. Then the image is boxcar smoothed.
 
-    # Allocation of memory for the new Poisson interpolated images
-    # #Option 1
-    # im_poiss = np.empty_like(imhr_ini_PG)
-    # Option 2
-    # im_poiss=np.empty_like(imgauss_PG)
-
     # Simulation including the presolar grains
     im_poiss = np.random.poisson(imhr_ini_PG)
-    for i in range(0, N_iso):
-        # # ----- Option 1 : First poisson then gaussian blurr
-        # im_poiss[:,:,i]=np.random.poisson(imhr_ini_PG[:,:,i]) # Poisson distribution interpolation
-        imgauss_PG[:, :, i] = skimage.transform.rescale(im_poiss[:, :, i], order=0, scale=1 / hr_coeff,
-                                                        preserve_range=True, anti_aliasing=True,
-                                                        anti_aliasing_sigma=sig_gaussian)  # Gaussian blurring to simulate the beam while downscaling from 2064x2064 to 256x256 px. The "Anti_Aliasing" option applies a gaussian blurr which kernel radius will be sigma*truncate+1.
-        imboxcar_PG[:, :, i] = ap_convolve(imgauss_PG[:, :, i], box_kernel, boundary='fill',
-                                           fill_value=0.0)  # Boxcar smoothing
 
-        # # ----- Option 2 : First gaussian blurr then poisson
-
-        # imgauss_PG[:,:,i]=skimage.transform.rescale(imhr_ini_PG[:,:,i],order=0,scale=1/hr_coeff,preserve_range=True,anti_aliasing=True,anti_aliasing_sigma=sig_gaussian)
-        # im_poiss[:,:,i]=np.random.poisson(imgauss_PG[:,:,i])
-        # imboxcar_PG[:,:,i] = ap_convolve(imgauss_PG[:,:,i], box_kernel, boundary='fill', fill_value=0.0) # Create the boxcar image for this isotopes
+    #----- Image size reduction with beam blurr then boxcar
+    gauss_ker=np.round(fwhm_hr*2).astype(int)
+    if gauss_ker%2 !=1: gauss_ker=gauss_ker+1
+    boxcar_ker=np.ones((boxcar_px,boxcar_px))/boxcar_px**2
+    imgauss_PG = cv2.GaussianBlur(im_poiss*1.0,(gauss_ker,gauss_ker),0) # int32 are not supported by open cv
+    imgauss_PG=cv2.resize(imgauss_PG,(px,px),0,0)
+    imboxcar_PG = cv2.filter2D(imgauss_PG, cv2.CV_64F, boxcar_ker)
+    imgauss_PG.astype(int) # Images are counts so integers
+    imboxcar_PG.astype(int)
 
     ####---- Masking low counts regions
-
-    cts_th = int(imboxcar_PG[:, :,
-                 0].max() * th)  # Define criterion as 5% of the max encountered for the main isotope counts in one pixel
-    mask = np.zeros((px, px))  # Allocate memory for the mask with a 0 matrix to the image dimensions
-    mask[imboxcar_PG[:, :,
-         0] < cts_th] = 1  # Set all coordinates of pixels with lower counts than the criterion to 1 in 0 matrix mask.
+    cts_th = int(imboxcar_PG[:, :,0].max() * th)  # Define criterion as th% of the max encountered for the main isotope counts in one pixel
+    mask = np.zeros((px, px))
+    mask[imboxcar_PG[:, :,0] < cts_th] = 1  # Set all coordinates of pixels with lower counts than the criterion to 1 in 0 matrix mask.
 
     main = np.ma.masked_array(imboxcar_PG[:, :, 0], mask=mask)  # Extract main isotope image
     minor1 = np.ma.masked_array(imboxcar_PG[:, :, 1], mask=mask)  # Extract first minor isotope image
     minor2 = np.ma.masked_array(imboxcar_PG[:, :, 2], mask=mask)  # Extract second minor isotope image
-
-    # Stack masked images together again
     masked_image = np.ma.dstack((main, minor1, minor2))  # Stack the masked images together
 
     ####---- Ratio, delta and error calculations
