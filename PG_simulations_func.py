@@ -58,13 +58,13 @@ def create_circular_mask_multiple(h, w, center=None, radius=None):
         radius = min(center[0], center[1], w - center[0], h - center[1])
 
     Y, X = np.ogrid[:h, :w]
-    mask = np.zeros((h, w))
+    mask = np.empty((h, w),int)
     for i in range(0, len(center)):
         dist_from_center = np.sqrt((X - center[i][0]) ** 2 + (Y - center[i][1]) ** 2)
         if isinstance(radius, Iterable) == False:
             print('here')
             m = dist_from_center <= radius
-            mask = mask + m * (i + 1)
+            mask = mask + m * (i + 1) # Values attributed to PG have to start at 1 as 0 will be the non presolar material in the image
         else:
             m = dist_from_center <= radius[i]
             mask = mask + m * (i + 1)
@@ -2015,6 +2015,7 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
     #     px=256
     #     print('No pixel size specified. Fixed to '+str(px)+'x'+str(px))
 
+
     # --------------- Generation of a higher resolution simulated image
     # Real material will not be pixelated and blurred by the beam, so we first need to create a high resolution image to depict "reality"
     # T=(dwell_time*1E-3*frames*px**2) #total counting time in sec
@@ -2034,22 +2035,12 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
         file = path_realim + file
     s = sims.SIMS(file)
     raster = s.header['Image']['raster'] / 1000
+    px = s.header['Image']['width']
     realcts = np.zeros((s.header['Image']['width'], s.header['Image']['height'], N_iso))
     realcts[:, :, 0] = s.data.loc[Iso[0]].sum(axis=0).values  # extract maps of the main isotope and sum all frames
     realcts[:, :, 1] = s.data.loc[Iso[1]].sum(axis=0).values
     realcts[:, :, 2] = s.data.loc[Iso[2]].sum(axis=0).values
     realcts = realcts / 1
-
-    # If we work on each frame of the data
-    # p=s.header['Image']['planes']
-    raster = s.header['Image']['raster'] / 1000
-    px = s.header['Image']['width']
-
-    # print('')
-    # print('Image is : '+str(file))
-    # print(str(raster)+'x'+str(raster)+' µm, '+str(px)+'x'+str(px)+' pixels, '+str(p)+' frames')
-
-    # realcts=np.zeros((s.header['Image']['width'],s.header['Image']['height'],len(R)*p))
 
     ## Verification
 
@@ -2152,14 +2143,16 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
         PG_coor[ind_badcoor] = np.random.choice(px*hr_coeff,size=(len(ind_badcoor),2))  # Replacement of the problematic coordinates
         it = np.ravel_multi_index(np.asarray(PG_coor).T, extracted_cts[:, :, 0].shape)  # Update of the 1D index
         coor_verif = extracted_cts[:, :, 0].take(it)  # Update of the 16O counts
-    radius = list((PG_size/2) * 1E-3 / (raster/(px * hr_coeff)))  # Radius calculation of the grains in the HR dimensions
+    radius = ((PG_size/2) * 1E-3 / (raster/(px * hr_coeff))).reshape(Nb_PG)  # Radius calculation of the grains in the HR dimensions
     mask_PG = create_circular_mask_multiple(px * hr_coeff, px * hr_coeff, center=PG_coor,radius=radius)  # Mask creation of the grains' pixels
     imhr_ini = np.copy(extracted_cts)  # Copying the HR images channels to avoid altering them
 
     imhr_ini_PG = np.copy(imhr_ini)  # Copying the modified images
 
+
+
     ####---- Modifying maps counts on location of presolar grains
-    PG_delta = np.insert(PG_delta,0,[0,0],axis=0) # Ensures the non PG areas remain solar
+    PG_delta = np.insert(PG_delta[0],0,[0,0],axis=0) # Ensures the non PG areas remain solar
     R_minor = np.asarray(R[1::])
     imhr_ini_PG[mask_PG !=0, 1::] = extracted_cts[mask_PG !=0, 0][:,None] * np.take((PG_delta*1E-3+1)*R_minor,mask_PG,axis=0)[mask_PG!=0,:]
 
