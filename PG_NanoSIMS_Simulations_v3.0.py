@@ -39,7 +39,6 @@ import time
 import tkinter as tk
 from tkinter import filedialog
 
-import PG_simulations_func
 from PG_simulations_func import PG_simulationv6, create_circular_mask
 
 
@@ -147,7 +146,7 @@ if __name__ == "__main__":
         if data.NAME.str.contains('_corr').any() ==False: imagename = imagename.replace('_corr', '')
         grains = data.loc[data.NAME.str.contains(imagename)]
 
-        if grains.empty == True:
+        if grains.empty is True:
             print(f'No presolar grain were detected prior by the user in acquisition {imagename}')
             continue
         else:
@@ -205,7 +204,7 @@ if __name__ == "__main__":
                         # ----------- Simulation of PG images
 
                         f, ax, plots, plots_title, PG_coor, raster, px = PG_simulationv6(file=file, elem=elem,
-                                                                                         PG_delta=PG_delta[u],
+                                                                                         PG_delta=PG_delta,
                                                                                          PG_size=PG_size[u, :],
                                                                                          OG_grain=grain,
                                                                                          beam_size=beam, boxcar_px=boxcar,
