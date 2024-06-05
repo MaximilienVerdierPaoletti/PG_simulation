@@ -4,7 +4,7 @@ Created on Fri 3 May 2024
 
 @author: mverdier
 """
-#%% Modules
+# %% Modules
 import os
 import numpy as np
 import pandas as pd  # enables the use of dataframe
@@ -24,7 +24,7 @@ from astropy.convolution import convolve as ap_convolve
 from astropy.convolution import Box2DKernel
 
 
-#%% Mask creation
+# %% Mask creation function
 def create_circular_mask(h, w, center=None, radius=None):
     if center is None:  # use the middle of the image
         center = (int(w / 2), int(h / 2))
@@ -44,20 +44,57 @@ def create_circular_mask_multiple(h, w, center=None, radius=None):
         radius = min(center[0], center[1], w - center[0], h - center[1])
 
     Y, X = np.ogrid[:h, :w]
-    mask = np.empty((h, w),int)
+    mask = np.empty((h, w), int)
     for i in range(0, len(center)):
-        dist_from_center = np.sqrt((X - center[i,0]) ** 2 + (Y - center[i,1]) ** 2)
+        dist_from_center = np.sqrt((X - center[i, 0]) ** 2 + (Y - center[i, 1]) ** 2)
         if not isinstance(radius, Iterable):
-            print('here')
             m = dist_from_center <= radius
-            mask = mask + m * (i + 1) # Values attributed to PG have to start at 1 as 0 will be the non presolar material in the image
+            mask = mask + m * (i + 1)  # Values attributed to PG have to start at 1 as 0 will be the non presolar material in the image
         else:
             m = dist_from_center <= radius[i]
             mask = mask + m * (i + 1)
     return mask
 
 
-#%% Isotopic ratio extraction function
+# %% PG coordinates mask function
+
+def PG_coor_mask(px, hr_coeff, Nb_PG, data, th, ind_OG_PG, PG_size, raster):
+    PG_coor = np.random.choice(px * hr_coeff, size=(Nb_PG, 2), replace=False)
+    it = np.ravel_multi_index(np.asarray(PG_coor).T, data[:, :, 0].shape)  # 1D index of the coordinates in the image
+    coor_verif = data[:, :, 0].take(it)  # Extracting the corresponding 16O counts of the coordinates
+    dup = np.array([1])
+    radius = ((PG_size / 2) * 1E-3 / (raster / (px * hr_coeff))).reshape(Nb_PG)  # Radius calculation of the grains in the HR dimensions
+    # If any 16O counts select as the center of a grain is below the masking threshold OR overlaps the OG-PG coordinates OR the artificial coordinates have duplicates
+    ct=0
+    while (any(coor_verif < data[:, :, 0].max() * th) is True) or (dup.size != 0):  # FIXME no verification of overlap with OG_PG
+        ind_badcoor = np.where(coor_verif < data[:, :, 0].max() * th)  # Location of the problematic coordinates
+        if coor_verif in ind_OG_PG: ind_badcoor = ind_badcoor.append(np.where(coor_verif in ind_OG_PG))  # if one grain location overlap the true PG coordinates
+        PG_coor[ind_badcoor] = np.random.choice(px * hr_coeff, size=(len(ind_badcoor[0]), 2), replace=False)  # Replacement of the problematic coordinates
+        it = np.ravel_multi_index(np.asarray(PG_coor).T, data[:, :, 0].shape)  # Update of the 1D index
+        coor_verif = data[:, :, 0].take(it)  # Update of the 16O counts
+        u, c = np.unique(PG_coor, return_counts=True)  # check for duplicates
+        dup = u[c > 1]
+        ct+=1
+        if ct > 10: print('Overloop', ct)
+
+        # Check for potential overlaps
+        norm = np.sqrt((PG_coor[:, 0][None, :] - PG_coor[:, 0][:, None]) ** 2 + (PG_coor[:, 1][None, :] - PG_coor[:, 1][:, None]) ** 2)
+        overlap = norm < (radius[None, :] + radius[:, None])
+        overlap = np.tril(overlap, -1)  # remove values above diagonal as they are the symmetrical of the other half
+        while overlap.any():
+            ind = np.argwhere(overlap == True)
+            for i in ind: PG_coor[i[0], :] = np.random.choice(px * hr_coeff, size=(1, 2), replace=False)
+            norm = np.sqrt((PG_coor[:, 0][None, :] - PG_coor[:, 0][:, None]) ** 2 + (PG_coor[:, 1][None, :] - PG_coor[:, 1][:, None]) ** 2)
+            overlap = norm < (radius[None, :] + radius[:, None])
+            np.fill_diagonal(overlap, False)
+
+    mask_PG = create_circular_mask_multiple(px * hr_coeff, px * hr_coeff, center=PG_coor, radius=radius)  # Mask creation of the grains' pixels
+    imhr_ini = np.copy(data)  # Copying the HR images channels to avoid altering them
+
+    return imhr_ini, PG_coor, radius, mask_PG
+
+
+# %% Isotopic ratio extraction function
 def Iso_Ratio(elem):
     if not isinstance(elem, list):
         elem = [elem]
@@ -65,7 +102,8 @@ def Iso_Ratio(elem):
     R = [ratio_list[ratio_list['var_name'].str.contains(i)]['ratio'] for i in elem]
     return R
 
-#%% Simulation v6 : For automatization on PG from tables using multiple isotopic ratios simultaneously
+
+# %% Simulation v6 : For automatization on PG from tables using multiple isotopic ratios simultaneously
 def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size=None, boxcar_px=None, OG_grain=None,
                     standard=None, smart=None, verif=None,
                     display='OFF'):
@@ -127,9 +165,8 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
         smart = 1
         print('Smart error activated')
     if standard is None:
-        standard='average'
+        standard = 'average'
         print('Image will be relative to standard terrestrial values. Set "standard" to "average" for delta values relative to the average value of the region.')
-
 
     # --------------- Generation of a higher resolution simulated image
     hr_coeff = 8
@@ -151,79 +188,6 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
     realcts[:, :, 2] = s.data.loc[Iso[2]].sum(axis=0).values
     realcts = realcts / 1
 
-    ## Verification
-
-    if verif == 1:
-
-        realcts_verif = np.copy(realcts)
-        realcts_verif = realcts_verif / 1
-
-        box_kernel = Box2DKernel(boxcar_px)
-        imboxcar_PG = np.zeros_like(realcts_verif)
-        for i in range(0, 3):
-            imboxcar_PG[:, :, i] = ap_convolve(realcts_verif[:, :, i], box_kernel, boundary='fill', fill_value=0.0)
-
-        # ----- Threshold
-        th = 0.05
-        cts_th = int(imboxcar_PG[:, :, 0].max() * th)
-        mask = np.zeros((px, px))
-        mask[imboxcar_PG[:, :, 0] < cts_th] = 1
-
-        main = np.ma.masked_array(imboxcar_PG[:, :, 0], mask=mask)
-        minor1 = np.ma.masked_array(imboxcar_PG[:, :, 1], mask=mask)
-        minor2 = np.ma.masked_array(imboxcar_PG[:, :, 2], mask=mask)
-        masked_image = np.ma.dstack((main, minor1, minor2))
-
-        R_1st = minor1 / main
-        D = minor1
-        err_R1 = R_1st * np.sqrt(1 / minor1 + 1 / main) / boxcar_px
-        d_1st = ((minor1 / main) / R[1] - 1) * 1000
-        err_d1 = err_R1 / R[1] * 1000
-        R_2nd = minor2 / main
-        d_2nd = ((minor2 / main) / R[2] - 1) * 1000
-
-        # Rsig=[R[1]]
-        Rsig = [np.mean(R_1st)]
-        Dmod = np.where(D < main * Rsig[0], main * Rsig[0], D)
-
-        # imboxcar_sig1st=np.abs(R_1st-Rsig[0])/err_R1
-        imboxcar_sig1st = np.abs(minor1 - main * Rsig[0]) / np.sqrt(Dmod) * 3
-        # imboxcar_sig1st=np.abs(minor1-R[1]*main)/np.sqrt(R[1]*main)*3
-        # imboxcar_sig1st=np.abs(minor1-R[1]*main)/np.sqrt(R[1]*main)*np.sqrt(3)
-
-        d1 = ((realcts_verif[:, :, 1] / realcts_verif[:, :, 0]) / R[1] - 1) * 1000
-        f, [[ax, axbox], [axerr, axsig]] = plt.subplots(2, 2, sharex=True, sharey=True)
-        im0 = ax.imshow(d1, cmap='gnuplot2')
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        ax.set_title('delta no boxcar')
-        f.colorbar(im0, cax=cax)
-
-        im1 = axbox.imshow(d_1st, cmap='gnuplot2')
-        divider = make_axes_locatable(axbox)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        axbox.set_title('delta boxcar')
-        f.colorbar(im1, cax=cax)
-        # plt.plot(int(PG_coor[0][0]/hr_coeff),int(PG_coor[0][1]/hr_coeff),'o',mfc='none',mec='r',markersize=20)
-
-        # plt.figure()
-        im2 = axsig.imshow(imboxcar_sig1st, cmap='gnuplot2')
-        divider = make_axes_locatable(axsig)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        axsig.set_title('sigma')
-        f.colorbar(im2, cax=cax)
-        # plt.colorbar()
-        # plt.plot(PG_coor[0]/256,'.r',markersize=15)
-
-        im3 = axerr.imshow(err_d1, cmap='gnuplot2')
-        divider = make_axes_locatable(axerr)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        axerr.set_title('delta error')
-        f.colorbar(im3, cax=cax)
-
-        plt.suptitle(file, fontsize=15)
-
-
     ####---- Extraction of countrates from Low Resolution (LR) to High Resolution image
     D = np.copy(realcts)  # We copy the image to make sure to not alter the extraction
     extracted_cts = cv2.resize(D, dsize=(px * hr_coeff, px * hr_coeff),
@@ -240,26 +204,16 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
         ind_OG_PG = []
 
     ####---- PG coordinates
-    PG_coor = np.random.choice(px * hr_coeff, size=(Nb_PG,2))
-    it = np.ravel_multi_index(np.asarray(PG_coor).T, extracted_cts[:, :, 0].shape)  # 1D index of the coordinates in the image
-    coor_verif = extracted_cts[:, :, 0].take(it)  # Extracting the corresponding 16O counts of the coordinates
-    while (any(coor_verif < extracted_cts[:, :, 0].max() * th) is True) or (coor_verif in ind_OG_PG):  # If any 16O counts select as the center of a grain is below the masking threshold
-        ind_badcoor = np.where(coor_verif < extracted_cts[:, :, 0].max() * th)  # Location of the problematic coordinates
-        PG_coor[ind_badcoor] = np.random.choice(px*hr_coeff,size=(len(ind_badcoor),2))  # Replacement of the problematic coordinates
-        it = np.ravel_multi_index(np.asarray(PG_coor).T, extracted_cts[:, :, 0].shape)  # Update of the 1D index
-        coor_verif = extracted_cts[:, :, 0].take(it)  # Update of the 16O counts
-    radius = ((PG_size/2) * 1E-3 / (raster/(px * hr_coeff))).reshape(Nb_PG)  # Radius calculation of the grains in the HR dimensions
-    mask_PG = create_circular_mask_multiple(px * hr_coeff, px * hr_coeff, center=PG_coor,radius=radius)  # Mask creation of the grains' pixels
-    imhr_ini = np.copy(extracted_cts)  # Copying the HR images channels to avoid altering them
-
+    imhr_ini, PG_coor, radius, mask_PG = PG_coor_mask(px, hr_coeff, Nb_PG, extracted_cts, th, ind_OG_PG, PG_size, raster)
     imhr_ini_PG = np.copy(imhr_ini)  # Copying the modified images
 
-
+    plt.figure(5)
+    plt.imshow(mask_PG)
 
     ####---- Modifying maps counts on location of presolar grains
-    PG_delta = np.insert(PG_delta[0],0,[0,0],axis=0) # Ensures the non PG areas remain solar
+    PG_delta = np.insert(PG_delta[0], 0, [0, 0], axis=0)  # Ensures the non PG areas remain solar
     R_minor = np.asarray(R[1::])
-    imhr_ini_PG[mask_PG !=0, 1::] = extracted_cts[mask_PG !=0, 0][:,None] * np.take((PG_delta*1E-3+1)*R_minor,mask_PG,axis=0)[mask_PG!=0,:]
+    imhr_ini_PG[mask_PG != 0, 1::] = extracted_cts[mask_PG != 0, 0][:, None] * np.take((PG_delta * 1E-3 + 1) * R_minor, mask_PG, axis=0)[mask_PG != 0, :]
 
     ####---- Beam blurr and Boxcar definitions
 
@@ -277,20 +231,20 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
     # Simulation including the presolar grains
     im_poiss = np.random.poisson(imhr_ini_PG)
 
-    #----- Image size reduction with beam blurr then boxcar
-    gauss_ker=np.round(fwhm_hr*2).astype(int)
-    if gauss_ker%2 !=1: gauss_ker=gauss_ker+1
-    boxcar_ker=np.ones((boxcar_px,boxcar_px))/boxcar_px**2
-    imgauss_PG = cv2.GaussianBlur(im_poiss*1.0,(gauss_ker,gauss_ker),0) # int32 are not supported by open cv
-    imgauss_PG=cv2.resize(imgauss_PG,(px,px),0,0)
+    # ----- Image size reduction with beam blurr then boxcar
+    gauss_ker = np.round(fwhm_hr * 2).astype(int)
+    if gauss_ker % 2 != 1: gauss_ker = gauss_ker + 1
+    boxcar_ker = np.ones((boxcar_px, boxcar_px)) / boxcar_px ** 2
+    imgauss_PG = cv2.GaussianBlur(im_poiss * 1.0, (gauss_ker, gauss_ker), 0)  # int32 are not supported by open cv
+    imgauss_PG = cv2.resize(imgauss_PG, (px, px), 0, 0)
     imboxcar_PG = cv2.filter2D(imgauss_PG, cv2.CV_64F, boxcar_ker)
-    imgauss_PG.astype(int) # Images are counts so integers
+    imgauss_PG.astype(int)  # Images are counts so integers
     imboxcar_PG.astype(int)
 
     ####---- Masking low counts regions
-    cts_th = int(imboxcar_PG[:, :,0].max() * th)  # Define criterion as th% of the max encountered for the main isotope counts in one pixel
+    cts_th = int(imboxcar_PG[:, :, 0].max() * th)  # Define criterion as th% of the max encountered for the main isotope counts in one pixel
     mask = np.zeros((px, px))
-    mask[imboxcar_PG[:, :,0] < cts_th] = 1  # Set all coordinates of pixels with lower counts than the criterion to 1 in 0 matrix mask.
+    mask[imboxcar_PG[:, :, 0] < cts_th] = 1  # Set all coordinates of pixels with lower counts than the criterion to 1 in 0 matrix mask.
 
     main = np.ma.masked_array(imboxcar_PG[:, :, 0], mask=mask)  # Extract main isotope image
     minor1 = np.ma.masked_array(imboxcar_PG[:, :, 1], mask=mask)  # Extract first minor isotope image
@@ -298,31 +252,29 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
     masked_image = np.ma.dstack((main, minor1, minor2))  # Stack the masked images together
 
     ####---- Ratio, delta and error calculations
-
     R_1st = minor1 / main
     R_2nd = minor2 / main
 
-    # err_R1=R_1st*np.sqrt(1/minor1+1/main)/boxcar_px
-    # err_R2=R_2nd*np.sqrt(1/minor2+1/main)/boxcar_px
-    D = minor1
-    Dmod = np.where(D < main * R[1], main * R[1], D)
-    err_R1 = R_1st * np.sqrt(1 / Dmod + 1 / main) / boxcar_px
-    err_R2 = R_2nd * np.sqrt(1 / minor2 + 1 / main) / boxcar_px
+    D_R1 = np.copy(minor1)
+    D_R2 = np.copy(minor2)
+    Dmod_R1 = np.where(D_R1 < main * R[1], main * R[1], D_R1)
+    Dmod_R2 = np.where(D_R2 < main * R[2], main * R[2], D_R2)
+    err_R1 = R_1st * np.sqrt(1 / Dmod_R1 + 1 / main) / boxcar_px
+    err_R2 = R_2nd * np.sqrt(1 / Dmod_R2 + 1 / main) / boxcar_px
 
     d_1st = ((minor1 / main) / R[1] - 1) * 1000
-    # err_d1=(1000/(R[1]*main))*np.sqrt((minor1*(minor1+main)/main))
-    err_d1 = err_R1 / R[1] * 1000
+    err_d1 = err_R1 / R[1] * 1000  # OR err_d1=(1000/(R[1]*main))*np.sqrt((minor1*(minor1+main)/main))
     d_2nd = ((minor2 / main) / R[2] - 1) * 1000
     err_d2 = err_R2 / R[2] * 1000
 
     ####---- Sigma images
 
     # Sigma images will be defined either relative to the standard value or the average ratio of the image
+    #FIXME: Average of image is shifted by all the presolar grains. If you want average you have to take the average of the original image
     if standard == "average":
         Rsig = [np.mean(R_1st), np.mean(R_2nd)]
     else:
         Rsig = R[1:]
-    # Rsig=
 
     # Smart error ON
     # imboxcar_sig1st=np.abs(minor1-main*Rsig[0])/np.sqrt(main*Rsig[0])*boxcar_px
@@ -335,11 +287,11 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
         Dmod[:, :, 0] = minor1
         Dmod[:, :, 1] = minor2
 
-        for g in range(0, N_iso - 1): Dmod[:, :, g] = np.where(masked_image[:, :, g + 1] < main * Rsig[g],
-                                                               main * Rsig[g], minor1)
+        # Replace px whose counts are < to expected poissonian counts
+        for g in range(0, N_iso - 1): Dmod[:, :, g] = np.where(masked_image[:, :, g + 1] < main * Rsig[g], main * Rsig[g], masked_image[:, :, g + 1])
 
-        imboxcar_sig1st = np.abs(minor1 - main * Rsig[0]) / np.sqrt(Dmod[:, :, 0]) * 3
-        imboxcar_sig2nd = np.abs(minor2 - main * Rsig[1]) / np.sqrt(Dmod[:, :, 1]) * 3
+        imboxcar_sig1st = np.abs(minor1 - main * Rsig[0]) / np.sqrt(Dmod[:, :, 0]) * boxcar_px
+        imboxcar_sig2nd = np.abs(minor2 - main * Rsig[1]) / np.sqrt(Dmod[:, :, 1]) * boxcar_px
     else:
         imboxcar_sig1st = np.abs(R_1st - Rsig[0]) / err_R1
         imboxcar_sig2nd = np.abs(R_2nd - Rsig[1]) / err_R2
@@ -349,25 +301,104 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
     # imboxcar_sig2nd=np.abs(d_2nd/err_d2)#smart error
     # sig_boxcar=np.abs((imboxcar_PG-np.average(imboxcar_PG))/np.std(imboxcar_PG))
 
-    # plt.subplot()
-    # plt.imshow(realcts,cmap='gnuplot2')
-    # plt.colorbar()
-
     if verif == 1:
-        # f_verif,[axpoiss,axgauss,axbox]=plt.subplots(1,3,sharex=True,sharey=True)
-        f_verif, [axpoiss, axgauss, axbox] = plt.subplots(1, 3)
-        axpoiss.imshow(im_poiss[:, :, 1], cmap='gnuplot2')
-        axpoiss.set_title('Poisson HR')
-        axpoiss.plot(PG_coor[0][0], PG_coor[0][1], 'o', mfc='none', mec='r', markersize=15)
-        axgauss.imshow(imgauss_PG[:, :, 1], cmap='gnuplot2')
-        axgauss.plot(int(PG_coor[0][0] / hr_coeff), int(PG_coor[0][1] / hr_coeff), 'o', mfc='none', mec='r',
-                     markersize=15)
-        axgauss.set_title('Gaussian blurr')
-        axbox.imshow(imboxcar_PG[:, :, 1], cmap='gnuplot2')
-        axbox.plot(int(PG_coor[0][0] / hr_coeff), int(PG_coor[0][1] / hr_coeff), 'o', mfc='none', mec='r',
-                   markersize=15)
-        axbox.set_title('Gaussian + Boxcar')
-        plt.suptitle('17O counts', fontsize=15)
+        realcts_OG = np.copy(realcts)
+        # realcts_OG = realcts_OG / 1
+
+        # box_kernel_OG = Box2DKernel(boxcar_px)
+        # imboxcar_PG_OG = np.zeros_like(realcts_OG)
+        # for i in range(0, 3):
+        #     imboxcar_PG_OG[:, :, i] = ap_convolve(realcts_OG[:, :, i], box_kernel_OG, boundary='fill', fill_value=0.0)
+
+        imboxcar_PG_OG = cv2.filter2D(realcts_OG, cv2.CV_64F, boxcar_ker)
+        imboxcar_PG_OG.astype(int)
+
+        # ----- Threshold
+        cts_th = int(imboxcar_PG_OG[:, :, 0].max() * th)
+        mask_OG = np.zeros((px, px))
+        mask_OG[imboxcar_PG_OG[:, :, 0] < cts_th] = 1
+
+        main_OG = np.ma.masked_array(imboxcar_PG_OG[:, :, 0], mask=mask)
+        minor1_OG = np.ma.masked_array(imboxcar_PG_OG[:, :, 1], mask=mask)
+        minor2_OG = np.ma.masked_array(imboxcar_PG_OG[:, :, 2], mask=mask)
+        masked_image_OG = np.ma.dstack((main_OG, minor1_OG, minor2_OG))  # Stack the masked images together
+
+        ####---- Ratio, delta and error calculations
+        R_1st_OG = minor1_OG / main_OG
+        R_2nd_OG = minor2_OG / main_OG
+        delta1_OG = ((minor1_OG / main_OG) / R[1] - 1) * 1000
+        delta2_OG = ((minor2_OG / main_OG) / R[2] - 1) * 1000
+
+        D_R1_OG = np.copy(minor1_OG)
+        D_R2_OG = np.copy(minor2_OG)
+        Dmod_R1_OG = np.where(D_R1_OG < main_OG * R[1], main_OG * R[1], D_R1_OG)
+        Dmod_R2_OG = np.where(D_R2_OG < main_OG * R[2], main_OG * R[2], D_R2_OG)
+        err_R1_OG = R_1st_OG * np.sqrt(1 / Dmod_R1_OG + 1 / main_OG) / boxcar_px
+        err_R2_OG = R_2nd_OG * np.sqrt(1 / Dmod_R2_OG + 1 / main_OG) / boxcar_px
+
+        d_1st_OG = ((minor1_OG / main_OG) / R[1] - 1) * 1000
+        err_d1_OG = err_R1_OG / R[1] * 1000  # OR err_d1=(1000/(R[1]*main))*np.sqrt((minor1*(minor1+main)/main))
+        d_2nd_OG = ((minor2_OG / main_OG) / R[2] - 1) * 1000
+        err_d2_OG = err_R2_OG / R[2] * 1000
+
+        if smart == 1:
+            label_err = 'ON'
+            Dmod_OG = np.zeros((main_OG.shape[0], main_OG.shape[1], N_iso - 1))
+            Dmod_OG[:, :, 0] = minor1_OG
+            Dmod_OG[:, :, 1] = minor2_OG
+
+            for g in range(0, N_iso - 1): Dmod_OG[:, :, g] = np.where(masked_image_OG[:, :, g + 1] < main_OG * Rsig[g], main_OG * Rsig[g], masked_image_OG[:, :, g+1])
+
+            imboxcar_sig1st_OG = np.abs(minor1_OG - main_OG * Rsig[0]) / np.sqrt(Dmod_OG[:, :, 0]) * boxcar_px
+            imboxcar_sig2nd_OG = np.abs(minor2_OG - main_OG * Rsig[1]) / np.sqrt(Dmod_OG[:, :, 1]) * boxcar_px
+        else:
+            label_err = 'OFF'
+            imboxcar_sig1st_OG = np.abs(R_1st_OG - Rsig[0]) / err_R1_OG
+            imboxcar_sig2nd_OG = np.abs(R_2nd_OG - Rsig[1]) / err_R2_OG
+
+        # Figure
+        f_OG, [[axR1, axd1, axsig1], [axR2, axd2, axsig2]] = plt.subplots(2, 3, sharex=True, sharey=True)
+        im0 = axR1.imshow(R_1st_OG, cmap='gnuplot2')
+        divider = make_axes_locatable(axR1)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        axR1.set_title('Ratio 17O')
+        f_OG.colorbar(im0, cax=cax)
+
+        im1 = axd1.imshow(delta1_OG, cmap='gnuplot2')
+        divider = make_axes_locatable(axd1)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        axd1.set_title('delta 17O')
+        f_OG.colorbar(im1, cax=cax)
+        # plt.plot(int(PG_coor[0][0]/hr_coeff),int(PG_coor[0][1]/hr_coeff),'o',mfc='none',mec='r',markersize=20)
+
+        # plt.figure()
+        im2 = axsig1.imshow(imboxcar_sig1st_OG, cmap='gnuplot2')
+        divider = make_axes_locatable(axsig1)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        axsig1.set_title('sigma 17O, smart error: ' + label_err)
+        f_OG.colorbar(im2, cax=cax)
+        # plt.colorbar()
+        # plt.plot(PG_coor[0]/256,'.r',markersize=15)
+
+        im3 = axR2.imshow(R_2nd_OG, cmap='gnuplot2')
+        divider = make_axes_locatable(axR2)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        axR2.set_title('Ratio 18O')
+        f_OG.colorbar(im3, cax=cax)
+
+        im4 = axd2.imshow(delta2_OG, cmap='gnuplot2')
+        divider = make_axes_locatable(axd2)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        axd2.set_title('delta 18O')
+        f_OG.colorbar(im4, cax=cax)
+
+        im5 = axsig2.imshow(imboxcar_sig2nd_OG, cmap='gnuplot2')
+        divider = make_axes_locatable(axsig2)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        axsig2.set_title('sigma 18O')
+        f_OG.colorbar(im5, cax=cax)
+
+        plt.suptitle(file, fontsize=15)
 
     ## Plots
 
