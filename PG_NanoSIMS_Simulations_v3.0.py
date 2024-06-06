@@ -94,7 +94,8 @@ if __name__ == "__main__":
 
     # ---- Number of outer and inner iterations
     iterations = 3
-    zoom_iteration = 15
+    max_iteration=20
+    cost_goal=0.4
     c = cm.rainbow(np.linspace(0, 1, Nb_PG))
 
     # ---- Legend of summary figure (fres) for each measured grain
@@ -201,7 +202,12 @@ if __name__ == "__main__":
                 momentum_mat = np.zeros((3, Nb_PG))
                 momentum_adam = np.zeros((3, Nb_PG))
 
-                for j in range(0, zoom_iteration):
+                # for j in range(0, zoom_iteration):
+                j=0
+                cost=5
+                while True:
+                    if cost < cost_goal or j > max_iteration:
+                        break
                     for u in range(0, PG_size.shape[0]):
                         # ----------- Simulation of PG images
                         if (k == 0) & (j == 0): verif = 1
@@ -296,6 +302,10 @@ if __name__ == "__main__":
                     new_simu.T[0] = np.where(new_simu.T[0] < 50, 100, new_simu.T[0])
                     new_simu.T[1::] = np.where(new_simu.T[1::] <= -1000, -999, new_simu.T[1::])
 
+                    # Save cost function evolution (normalized norms)
+                    if 'norm_summary' not in globals(): norm_summary = pd.DataFrame(data=norm3D,columns=['Norm'])
+                    else : norm_summary = pd.concat([norm_summary,pd.DataFrame(norm3D,columns=['Norm'])], axis=0, ignore_index=True)
+
                     # Study of the behavior of parameters in gradient descent
                     for m in range(9):  # Loop on simulated grains
                         ax_adnesp[0, k].plot(j, norm3D[m], 'v', mec=c[m], mfc='none', linewidth=3)  # Cost function (i.e., norm)
@@ -313,12 +323,17 @@ if __name__ == "__main__":
                     # PG_delta = np.where(PG_delta <= -1000, -999, PG_delta) #FIXME:  Check if necessary considering lines above for new_simu
                     PG_delta = [PG_delta.tolist()]
 
+                    norm=norm_summary.iloc[summary.loc[summary['Outer Iteration'] == k].index]
+                    cost=norm.sort_values(by='Norm',ascending=True)[0:nb_closest_match][0:nb_closest_match].mean().item()
+                    j+=1
+
                 # Look for the closest match in all simulation of this outer iteration
                 # FIXME change norm formulation (Cf gradient descent) / Check if it is necessary to calculate the norm again as it is a return of the NADAM function
-                sim_outer = summary.loc[summary['Outer Iteration'] == k]
-                norm_outer = (np.abs(sim_outer['Measured diameter'].divide(grain_size) - 1) + (np.abs(sim_outer[Ratio_names].div(grain_delta.values) - 1)).sum(axis=1)) ** 0.5
-                closest_match_index = norm_outer.argsort()[0:nb_closest_match]
-                closest_match = sim_outer.iloc[closest_match_index, :]
+                # sim_outer = summary.loc[summary['Outer Iteration'] == k]
+                # norm_outer = (np.abs(sim_outer['Measured diameter'].divide(grain_size) - 1) + (np.abs(sim_outer[Ratio_names].div(grain_delta.values) - 1)).sum(axis=1)) ** 0.5
+                norm_outer = norm_summary.iloc[summary.loc[summary['Outer Iteration'] == k].index]
+                closest_match_index = norm_outer.sort_values(by='Norm',ascending=True)[0:nb_closest_match].index
+                closest_match = summary.iloc[closest_match_index, :]
 
 
 
@@ -332,9 +347,8 @@ if __name__ == "__main__":
                 ax_adnesp[3, k].set_xlabel('Inner iteration', fontsize=15)
 
             # Look for the closest match throughout all the iterations
-            #FIXME: Check if it is necessary to calculate the norm again as it is a return of the NADAM function
-            norm = (np.abs(summary['Measured diameter'].divide(grain_size) - 1) + (np.abs(summary[Ratio_names].div(grain_delta.values) - 1)).sum(axis=1)) ** 0.5
-            closest_match_index = norm.argsort()[0:num_final_selection]
+            # norm = (np.abs(summary['Measured diameter'].divide(grain_size) - 1) + (np.abs(summary[Ratio_names].div(grain_delta.values) - 1)).sum(axis=1)) ** 0.5
+            closest_match_index = norm_summary.sort_values(by='Norm',ascending=True)[0:nb_closest_match].index
             closest_match_final = summary.iloc[closest_match_index, :]
 
             # for ax in axres:

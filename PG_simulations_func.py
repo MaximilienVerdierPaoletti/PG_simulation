@@ -74,8 +74,10 @@ def PG_coor_mask(px, hr_coeff, Nb_PG, data, th, ind_OG_PG, PG_size, raster):
         coor_verif = data[:, :, 0].take(it)  # Update of the 16O counts
         u, c = np.unique(PG_coor, return_counts=True)  # check for duplicates
         dup = u[c > 1]
-        ct+=1
-        if ct > 10: print('Overloop', ct)
+        ct += 1
+        if ct > 10:
+            print('Overloop', ct)
+            break
 
         # Check for potential overlaps
         norm = np.sqrt((PG_coor[:, 0][None, :] - PG_coor[:, 0][:, None]) ** 2 + (PG_coor[:, 1][None, :] - PG_coor[:, 1][:, None]) ** 2)
