@@ -46,16 +46,10 @@ from PG_simulations_func import PG_simulationv6, create_circular_mask
 # plt.ioff()
 matplotlib.rcParams['interactive'] = False
 
-
 def GD_AdamNesperov(target, measured_simulations, initial_simulations, learning_rate):
-    # FIXME : Pour les normes il est préférable d'utiliser des valeurs absolue plutôt que des racines carrés en terme de coût machine
-
     X = measured_simulations[0]
     Y = measured_simulations[1]
     Z = measured_simulations[2]
-    #
-    # norm3D = np.asarray(((X-target[0])**2+(Y-target[1])**2+(Z-target[2])**2)**0.5) #FIXME might not be the best suited norm because of different unit and dimension. Might have to normalize
-    # grad = np.array([(X-target[0])/norm3D, (Y-target[1])/norm3D, (Z-target[2])/norm3D])
 
     # norm3D_norm = np.asarray((((X-target[0])/target[0])**2 +
     #                      ((Y-target[1])/target[1])**2 +
@@ -93,7 +87,7 @@ if __name__ == "__main__":
     delta_database.extend(range(2000, 21000, 1000))
 
     # ---- Number of outer and inner iterations
-    iterations = 3
+    iterations = 4
     max_iteration=20
     cost_goal=0.4
     c = cm.rainbow(np.linspace(0, 1, Nb_PG))
@@ -124,7 +118,7 @@ if __name__ == "__main__":
     data = data[data.NAME.str.contains("Bulk") == False]  # Drop bulk ROIs
 
     # ---- Saving variable allocation
-    all_data = []
+    all_simulations = {}
     # Ratio_names=data.columns[data.columns.str.contains('^d-.*'+elem)].str.replace('d-','').to_list()
     Ratio_names = data.columns[data.columns.str.contains('^d-.*' + elem)].to_list()
     col = ['Image', 'Outer Iteration', 'Inner Iteration', 'Simulated grain index', 'Grain', 'Initial grain size (nm)', 'sigma R', 'Measured diameter']
@@ -146,6 +140,7 @@ if __name__ == "__main__":
     start = time.time()
     for file in file_list:
         imagename = file.rsplit('/', 1)[1].replace('.im', '')
+        all_simulations[imagename]={}  # Arborescence of dictionnary on file name
         if data.NAME.str.contains('_corr').any() == False: imagename = imagename.replace('_corr', '')
         grains = data.loc[data.NAME.str.contains(imagename)]
 
@@ -177,12 +172,19 @@ if __name__ == "__main__":
 
             it = 0
             fres, axres = plt.subplots(2, iterations, subplot_kw={"projection": "3d"})
-            f_adnesp, ax_adnesp = plt.subplots(4, 3)
+            axres=axres.ravel()
+            f_adnesp, ax_adnesp = plt.subplots(4, iterations)
 
             for k in range(0, iterations):
-                axres[0, k].plot(grain_size, grain_delta.iloc[:, 0].item(), grain_delta.iloc[:, 1].item(), 'sk', markersize=12,
+                all_simulations[imagename][k]={}
+                # axres[0, k].plot(grain_size, grain_delta.iloc[:, 0].item(), grain_delta.iloc[:, 1].item(), 'sk', markersize=12,
+                #                  label='Measured presolar grain', zorder=10)
+                # axres[1, k].plot(grain_size, grain_delta.iloc[:, 0].item(), grain_delta.iloc[:, 1].item(), 'sk', markersize=12,
+                #                  label='Measured presolar grain', zorder=10)
+
+                axres[k].plot(grain_size, grain_delta.iloc[:, 0].item(), grain_delta.iloc[:, 1].item(), 'sk', markersize=12,
                                  label='Measured presolar grain', zorder=10)
-                axres[1, k].plot(grain_size, grain_delta.iloc[:, 0].item(), grain_delta.iloc[:, 1].item(), 'sk', markersize=12,
+                axres[k+iterations].plot(grain_size, grain_delta.iloc[:, 0].item(), grain_delta.iloc[:, 1].item(), 'sk', markersize=12,
                                  label='Measured presolar grain', zorder=10)
 
                 # -----------------------------------------------------------------#
@@ -206,7 +208,8 @@ if __name__ == "__main__":
                 j=0
                 cost=5
                 while True:
-                    if cost < cost_goal or j > max_iteration:
+                    all_simulations[imagename][k][j] = {}
+                    if cost < cost_goal or j > max_iteration: # As a while loop continues if one condition is True, this if loop is necessary to break the cycle if one condition is True
                         break
                     for u in range(0, PG_size.shape[0]):
                         # ----------- Simulation of PG images
@@ -232,6 +235,7 @@ if __name__ == "__main__":
                         sigma_map = [plots[n] for n in sigma_map_index]
                         delta_map = [plots[n] for n in delta_map_index]
 
+
                         for i in range(0, PG_size.shape[1]):
                             radius = (np.asarray(PG_size[u, i]) / 2) * 1E-3 / (raster / px) * 1.5
                             mask = create_circular_mask(px, px, center=np.floor_divide(PG_coor, 8)[i], radius=radius)  # Mask creation of the grains' pixels
@@ -248,9 +252,10 @@ if __name__ == "__main__":
 
                             Diam = np.sqrt(len(delta_map[delta_anomalous_map_index[0]][X, Y]) * ((raster / px) ** 2) / np.pi) * 1000 * 2
 
-                            axres[0, k].plot(Diam, np.mean(delta_map[0][X, Y]), np.mean(delta_map[1][X, Y]), 'o', color=c[i], markersize=10, alpha=0.5)
-                            axres[1, k].plot(Diam, np.mean(delta_map[0][X, Y]), np.mean(delta_map[1][X, Y]), 'o', color=c[i], markersize=10, alpha=0.5)
-
+                            # axres[0, k].plot(Diam, np.mean(delta_map[0][X, Y]), np.mean(delta_map[1][X, Y]), 'o', color=c[i], markersize=10, alpha=0.5)
+                            # axres[1, k].plot(Diam, np.mean(delta_map[0][X, Y]), np.mean(delta_map[1][X, Y]), 'o', color=c[i], markersize=10, alpha=0.5)
+                            axres[k].plot(Diam, np.mean(delta_map[0][X, Y]), np.mean(delta_map[1][X, Y]), 'o', color=c[i], markersize=10, alpha=0.5)
+                            axres[k+iterations].plot(Diam, np.mean(delta_map[0][X, Y]), np.mean(delta_map[1][X, Y]), 'o', color=c[i], markersize=10, alpha=0.5)
                             contour = skimage.measure.find_contours(mask_th == 1, 0.5)
                             y, x = contour[0].T
                             ax = ax.ravel()
@@ -282,7 +287,7 @@ if __name__ == "__main__":
                         pp.savefig(f, transparent=True, dpi=100)
                         plt.close(f)
 
-                        all_data.append(plots)
+                        for im_it in range(0,len(plots_title)): all_simulations[imagename][k][j][plots_title[im_it]] = plots[im_it]
 
                     sim_outerin = summary.loc[(summary['Outer Iteration'] == k) & (summary['Inner Iteration'] == j)]
 
@@ -304,7 +309,7 @@ if __name__ == "__main__":
 
                     # Save cost function evolution (normalized norms)
                     if 'norm_summary' not in globals(): norm_summary = pd.DataFrame(data=norm3D,columns=['Norm'])
-                    else : norm_summary = pd.concat([norm_summary,pd.DataFrame(norm3D,columns=['Norm'])], axis=0, ignore_index=True)
+                    else : norm_summary = pd.concat([norm_summary, pd.DataFrame(norm3D,columns=['Norm'])], axis=0, ignore_index=True)
 
                     # Study of the behavior of parameters in gradient descent
                     for m in range(9):  # Loop on simulated grains
@@ -323,12 +328,11 @@ if __name__ == "__main__":
                     # PG_delta = np.where(PG_delta <= -1000, -999, PG_delta) #FIXME:  Check if necessary considering lines above for new_simu
                     PG_delta = [PG_delta.tolist()]
 
-                    norm=norm_summary.iloc[summary.loc[summary['Outer Iteration'] == k].index]
-                    cost=norm.sort_values(by='Norm',ascending=True)[0:nb_closest_match][0:nb_closest_match].mean().item()
-                    j+=1
+                    norm = norm_summary.iloc[summary.loc[summary['Outer Iteration'] == k].index]
+                    cost = norm.sort_values(by='Norm',ascending=True)[0:nb_closest_match][0:nb_closest_match].mean().item()
+                    j += 1
 
                 # Look for the closest match in all simulation of this outer iteration
-                # FIXME change norm formulation (Cf gradient descent) / Check if it is necessary to calculate the norm again as it is a return of the NADAM function
                 # sim_outer = summary.loc[summary['Outer Iteration'] == k]
                 # norm_outer = (np.abs(sim_outer['Measured diameter'].divide(grain_size) - 1) + (np.abs(sim_outer[Ratio_names].div(grain_delta.values) - 1)).sum(axis=1)) ** 0.5
                 norm_outer = norm_summary.iloc[summary.loc[summary['Outer Iteration'] == k].index]
@@ -337,11 +341,16 @@ if __name__ == "__main__":
 
 
 
-                axres[0, k].plot(closest_match['Measured diameter'], closest_match[Ratio_names[0]], closest_match[Ratio_names[1]], 's', mec='k', mfc='None',
+                # axres[0, k].plot(closest_match['Measured diameter'], closest_match[Ratio_names[0]], closest_match[Ratio_names[1]], 's', mec='k', mfc='None',
+                #                  markersize=10, zorder=5, linewidth=10)
+                # axres[1, k].plot(closest_match['Measured diameter'], closest_match[Ratio_names[0]], closest_match[Ratio_names[1]], 's', mec='k', mfc='None',
+                #                  markersize=10, zorder=5, linewidth=10)
+                # axres[0, k].set_title('Iteration #' + str(k), fontsize=12)
+                axres[k].plot(closest_match['Measured diameter'], closest_match[Ratio_names[0]], closest_match[Ratio_names[1]], 's', mec='k', mfc='None',
                                  markersize=10, zorder=5, linewidth=10)
-                axres[1, k].plot(closest_match['Measured diameter'], closest_match[Ratio_names[0]], closest_match[Ratio_names[1]], 's', mec='k', mfc='None',
+                axres[k+iterations].plot(closest_match['Measured diameter'], closest_match[Ratio_names[0]], closest_match[Ratio_names[1]], 's', mec='k', mfc='None',
                                  markersize=10, zorder=5, linewidth=10)
-                axres[0, k].set_title('Iteration #' + str(k), fontsize=12)
+                axres[k].set_title('Iteration #' + str(k), fontsize=12)
 
                 ax_adnesp[0, k].set_title('Outer iteration : ' + str(k), fontsize=18)
                 ax_adnesp[3, k].set_xlabel('Inner iteration', fontsize=15)
@@ -355,25 +364,33 @@ if __name__ == "__main__":
             #     ax.plot(closest_match_final['Measured Radius']*2,closest_match_final['d17O'],'o',mec='g',mfc='None',markersize=10,zorder=5,linewidth=2)
 
             for l in range(0, iterations):
-                axres[0, l].plot(closest_match_final['Measured diameter'], closest_match_final[Ratio_names[0]], closest_match_final[Ratio_names[1]], 'o', mec='g', mfc='None',
+                # axres[0, l].plot(closest_match_final['Measured diameter'], closest_match_final[Ratio_names[0]], closest_match_final[Ratio_names[1]], 'o', mec='g', mfc='None',
+                #                  markersize=10, zorder=5, linewidth=5)
+                # axres[1, l].plot(closest_match_final['Measured diameter'], closest_match_final[Ratio_names[0]], closest_match_final[Ratio_names[1]], 'o', mec='g', mfc='None',
+                #                  markersize=10, zorder=5, linewidth=5)
+                # axres[1, l].set_xlim3d([int(grain_size * 0.7), int(grain_size * 1.3)])
+                # axres[1, l].set_ylim3d([int(grain_delta[Ratio_names[0]].item() * 0.5), int(grain_delta[Ratio_names[0]].item() * 1.5)])
+                # axres[1, l].set_zlim3d([int(grain_delta[Ratio_names[1]].item() * 0.5), int(grain_delta[Ratio_names[1]].item() * 1.5)])
+                axres[l].plot(closest_match_final['Measured diameter'], closest_match_final[Ratio_names[0]], closest_match_final[Ratio_names[1]], 'o', mec='g', mfc='None',
                                  markersize=10, zorder=5, linewidth=5)
-                axres[1, l].plot(closest_match_final['Measured diameter'], closest_match_final[Ratio_names[0]], closest_match_final[Ratio_names[1]], 'o', mec='g', mfc='None',
+                axres[l+iterations].plot(closest_match_final['Measured diameter'], closest_match_final[Ratio_names[0]], closest_match_final[Ratio_names[1]], 'o', mec='g', mfc='None',
                                  markersize=10, zorder=5, linewidth=5)
-                axres[1, l].set_xlim3d([int(grain_size * 0.7), int(grain_size * 1.3)])
-                axres[1, l].set_ylim3d([int(grain_delta[Ratio_names[0]].item() * 0.5), int(grain_delta[Ratio_names[0]].item() * 1.5)])
-                axres[1, l].set_zlim3d([int(grain_delta[Ratio_names[1]].item() * 0.5), int(grain_delta[Ratio_names[1]].item() * 1.5)])
+                axres[l+iterations].set_xlim3d([int(grain_size * 0.7), int(grain_size * 1.3)])
+                axres[l+iterations].set_ylim3d([int(grain_delta[Ratio_names[0]].item() * 0.5), int(grain_delta[Ratio_names[0]].item() * 1.5)])
+                axres[l+iterations].set_zlim3d([int(grain_delta[Ratio_names[1]].item() * 0.5), int(grain_delta[Ratio_names[1]].item() * 1.5)])
 
-                axres[0, l].set_xlabel('Grain diameter (nm)', fontsize=14)
-                axres[0, l].set_ylabel(Ratio_names[0], fontsize=14)
-                axres[0, l].set_zlabel(Ratio_names[1], fontsize=14)
-                axres[1, l].set_xlabel('Grain diameter (nm)', fontsize=14)
-                axres[1, l].set_ylabel(Ratio_names[0], fontsize=14)
-                axres[1, l].set_zlabel(Ratio_names[1], fontsize=14)
+                axres[l].set_xlabel('Grain diameter (nm)', fontsize=14)
+                axres[l].set_ylabel(Ratio_names[0], fontsize=14)
+                axres[l].set_zlabel(Ratio_names[1], fontsize=14)
+                axres[l+iterations].set_xlabel('Grain diameter (nm)', fontsize=14)
+                axres[l+iterations].set_ylabel(Ratio_names[0], fontsize=14)
+                axres[l+iterations].set_zlabel(Ratio_names[1], fontsize=14)
 
             lines.extend((point_inner, point_matchfinal))
             labels.extend(label_points)
             fres.suptitle(imagename + '\n grain : ' + str(grain.NAME.item()), fontsize=15)
-            axres[0, 0].legend(lines, labels, loc='best', ncol=2)
+            # axres[0, 0].legend(lines, labels, loc='best', ncol=2)
+            axres[0].legend(lines, labels, loc='best', ncol=2)
 
             # f_norm.suptitle(imagename+'\n grain : '+str(grain.NAME.item()),fontsize=15)
             # f_norm.set_size_inches(16, 10)
@@ -400,6 +417,7 @@ if __name__ == "__main__":
                                      'Dilution on ' + Ratio_names[1] + '(%)': [Dilu_delta.iloc[:, 1]]})
 
             # FIXME create excel file at the end
+            # FIXME: Save all_simulation dictionnary into a pickle and or a HDF5 file
 
             print(f'Estimated size {int(Diam_res)} nm ({Dilu_size} %) and compositions {"/".join(map(str, Delta_res.astype(int).values))} permil '
                   f'({str().join(map(str, Dilu_delta.astype(int).values))} %)')
@@ -414,7 +432,8 @@ if __name__ == "__main__":
         f_adnesp.suptitle('Evolution of the gradient descent parameters', fontsize=22)
 
         S = summary.loc[summary['Outer Iteration'] == 1]
-        f, ax = plt.subplots(1, 1, subplot_kw={"projection": "3d"})
+        f = plt.figure()
+        ax = plt.axes(projection = '3d')
         ax.scatter(grain_size, grain_delta.iloc[:, 0].item(), grain_delta.iloc[:, 1].item(), 's', c='k', s=80)
         cmap = matplotlib.colors.ListedColormap(c)
         for i in S['Simulated grain index'].unique():
@@ -425,6 +444,9 @@ if __name__ == "__main__":
 
         fres.set_size_inches(16, 10)
         f_adnesp.set_size_inches(16, 10)
+
+
+
         pp.savefig(fres, transparent=True, dpi=100)
         pp.savefig(f_adnesp, transparent=True, dpi=100)
 
@@ -437,3 +459,73 @@ if __name__ == "__main__":
 
     end = time.time()
     print('Elapsed time: ' + str(end - start) + ' s')
+
+
+#%%
+
+import matplotlib.animation as animation
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.animation import PillowWriter
+
+out_it=0
+label_im='Sigma 17O/16O'
+
+
+
+S = summary.loc[summary['Outer Iteration'] == out_it]
+f_im = plt.figure()
+axani_im = plt.subplot(121)
+axani_im.set_axis_off()
+axani_im.set_title(label_im,fontsize=20)
+axani_grad = plt.subplot(122,projection = '3d')
+axani_grad.set_title('Gradient Descent',fontsize=20)
+axani_grad.tick_params(labelsize=20, pad=10)
+axani_grad.set_xlabel('Measured diameter (nm)', fontsize=20,labelpad=30)
+axani_grad.set_ylabel(grain_delta.columns[0], fontsize=20,labelpad=30)
+axani_grad.set_zlabel(grain_delta.columns[1], fontsize=20,labelpad=30)
+axani_grad.xaxis._axinfo['label']['space_factor'] = 5.0
+# ax.yaxis._axinfo['label']['space_factor'] = 2.0
+# ax.zaxis._axinfo['label']['space_factor'] = 2.0
+
+
+
+c_it = cm.rainbow(np.linspace(0, 1, S['Inner Iteration'].max()))
+axani_grad.plot(grain_size,grain_delta['d-17O/16O'].item(),grain_delta['d-18O/16O'].item(),'sk',markersize=12)
+
+def animate_im(i):
+    simu = all_simulations[imagename][out_it][i][label_im]
+    im = axani_im.imshow(simu.data)
+    divider = make_axes_locatable(axani_im)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    cbar=plt.colorbar(im,cax=cax)
+    cbar.ax.tick_params(labelsize=20)
+    # axs[i,j].title.set_text(titles[h])
+
+    return [im]
+
+# for im_it in range(0,S['Inner Iteration'].max()):
+#     animate(im_it)
+
+ani_im = animation.FuncAnimation(f_im, animate_im, interval = 500, frames = range(S['Inner Iteration'].max()), blit=True, repeat_delay=500)
+
+
+def animate_grad(i):
+    simu = all_simulations[imagename][out_it][i]['Sigma 17O/16O']
+    S_sel=S[S['Inner Iteration'] == i]
+    # im_grad=axani_grad.scatter(S_sel['Measured diameter'],S_sel['d-17O/16O'],S_sel['d-18O/16O'],c=S_sel['Simulated grain index'], marker='o', s=50)
+
+    im_grad = axani_grad.plot(S_sel['Measured diameter'],S_sel['d-17O/16O'],S_sel['d-18O/16O'],color=c_it[i], marker='o', markersize=20,linestyle='none')
+
+    return im_grad
+
+# for im_it in range(0,S['Inner Iteration'].max()):
+#     animate(im_it)
+
+ani_grad = animation.FuncAnimation(f_im, animate_grad, interval = 500, frames = range(S['Inner Iteration'].max()), blit=True, repeat_delay=500)
+
+
+mng = plt.get_current_fig_manager()
+### works on Ubuntu??? >> did NOT working on windows
+# mng.resize(*mng.window.maxsize())
+mng.window.state('zoomed') #works fine on Windows!
+plt.show()
