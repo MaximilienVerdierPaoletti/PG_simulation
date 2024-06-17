@@ -209,9 +209,6 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
     imhr_ini, PG_coor, radius, mask_PG = PG_coor_mask(px, hr_coeff, Nb_PG, extracted_cts, th, ind_OG_PG, PG_size, raster)
     imhr_ini_PG = np.copy(imhr_ini)  # Copying the modified images
 
-    plt.figure(5)
-    plt.imshow(mask_PG)
-
     ####---- Modifying maps counts on location of presolar grains
     PG_delta = np.insert(PG_delta[0], 0, [0, 0], axis=0)  # Ensures the non PG areas remain solar
     R_minor = np.asarray(R[1::])
@@ -271,10 +268,20 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
 
     ####---- Sigma images
 
-    # Sigma images will be defined either relative to the standard value or the average ratio of the image
-    #FIXME: Average of image is shifted by all the presolar grains. If you want average you have to take the average of the original image
+    # Sigma images will be defined either relative to the standard value or the average ratio of the original image (not the simulation with multiple PG)
     if standard == "average":
-        Rsig = [np.mean(R_1st), np.mean(R_2nd)]
+        cts_th = int(D[:, :, 0].max() * th)
+        mask_OG = np.zeros((px, px))
+        mask_OG[D[:, :, 0] < cts_th] = 1  # Set all coordinates of pixels with lower counts than the criterion to 1 in 0 matrix mask.
+
+        main_OG = np.ma.masked_array(D[:, :, 0], mask=mask_OG)
+        minor1_OG = np.ma.masked_array(D[:, :, 1], mask=mask_OG)
+        minor2_OG = np.ma.masked_array(D[:, :, 2], mask=mask_OG)
+
+        R1st_OG = minor1_OG/main_OG
+        R2nd_OG = minor2_OG/main_OG
+
+        Rsig = [np.mean(R1st_OG), np.mean(R2nd_OG)]
     else:
         Rsig = R[1:]
 
