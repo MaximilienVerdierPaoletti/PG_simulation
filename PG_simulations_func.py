@@ -198,10 +198,8 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
     # Original PG coordinates
     if 'OG_grain' in globals():
         OG_PG_center = [OG_grain.ROIX.item(), OG_grain.ROIY.item()]
-        m = create_circular_mask(px * hr_coeff, px * hr_coeff, center=OG_PG_center,
-                                 radius=int(OG_grain.ROIDIAM / (2 * raster) * px * hr_coeff))
+        m = create_circular_mask(px * hr_coeff, px * hr_coeff, center=OG_PG_center, radius=int(OG_grain.ROIDIAM / (2 * raster) * px * hr_coeff))
         ind_OG_PG = np.argwhere(m is True)
-        # del m
     else:
         ind_OG_PG = []
 
@@ -366,7 +364,7 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
             imboxcar_sig2nd_OG = np.abs(R_2nd_OG - Rsig[1]) / err_R2_OG
 
         # Figure
-        f_OG, [[axR1, axd1, axsig1], [axR2, axd2, axsig2]] = plt.subplots(2, 3, sharex=True, sharey=True)
+        f_OG, [[axR1, axd1, axsig1], [axR2, axd2, axsig2]] = plt.subplots(2, 3, figsize=(12, 12), sharex=True, sharey=True)
         im0 = axR1.imshow(R_1st_OG, cmap='gnuplot2')
         divider = make_axes_locatable(axR1)
         cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -407,7 +405,7 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
         axsig2.set_title('sigma 18O')
         f_OG.colorbar(im5, cax=cax)
 
-        plt.suptitle(file, fontsize=15)
+        # plt.suptitle(file, fontsize=15)
 
     ## Plots
 
@@ -457,5 +455,6 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
                                    size_vertical=1,
                                    fontproperties=fontprops)
         axs[i].add_artist(scalebar)
-
-    return fig, axs, plots, plots_title, PG_coor, raster, px  # ,axinsert
+    if verif == 1:
+        return fig, axs, plots, plots_title, PG_coor, raster, px, f_OG
+    return fig, axs, plots, plots_title, PG_coor, raster, px, None  # ,axinsert
