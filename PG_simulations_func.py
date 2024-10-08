@@ -6,6 +6,8 @@ Created on Fri 3 May 2024
 """
 # %% Modules
 import os
+from pickletools import uint8
+
 import numpy as np
 import pandas as pd  # enables the use of dataframe
 import matplotlib.pyplot as plt  # Enables plotting of data
@@ -18,6 +20,9 @@ import cv2
 # from scipy.ndimage import gaussian_filter
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes  # to insert subplot within plot
 from collections.abc import Iterable
+import cupy as cp
+
+
 
 # Astronomy Specific Imports
 from astropy.convolution import convolve as ap_convolve
@@ -38,60 +43,80 @@ def create_circular_mask(h, w, center=None, radius=None):
 
 # ------------- Mask creation for multiple PG with multiple or single radius at once
 def create_circular_mask_multiple(h, w, center=None, radius=None):
-    if center is None:  # use the middle of the image
-        center = (int(w / 2), int(h / 2))
-    if radius is None:  # use the smallest distance between the center and image walls
-        radius = min(center[0], center[1], w - center[0], h - center[1])
+    if center is None:  # default to the middle of the image
+        center = np.array([[int(w / 2), int(h / 2)]])
+    else:
+        center = np.array(center)
 
+    if radius is None:  # default to smallest distance from center
+        radius = np.array([min(c[0], c[1], w - c[0], h - c[1]) for c in center])
+    elif not isinstance(radius, Iterable):
+        radius = np.full(len(center), radius)
+
+    # Create grid for coordinates
     Y, X = np.ogrid[:h, :w]
-    mask = np.empty((h, w), int)
-    for i in range(0, len(center)):
-        dist_from_center = np.sqrt((X - center[i, 0]) ** 2 + (Y - center[i, 1]) ** 2)
-        if not isinstance(radius, Iterable):
-            m = dist_from_center <= radius
-            mask = mask + m * (i + 1)  # Values attributed to PG have to start at 1 as 0 will be the non presolar material in the image
-        else:
-            m = dist_from_center <= radius[i]
-            mask = mask + m * (i + 1)
+
+    # Initialize mask as zeros (no need for np.empty)
+    mask = np.zeros((h, w), dtype=int)
+
+    # Vectorized computation of mask
+    for i, (cx, cy) in enumerate(center):
+        dist_from_center = np.sqrt((X - cx) ** 2 + (Y - cy) ** 2)
+        mask[dist_from_center <= radius[i]] = i + 1  # Values attributed to PG have to start at 1 as 0 will be the non presolar material in the image
+
     return mask
 
-
 # %% PG coordinates mask function
-
 def PG_coor_mask(px, hr_coeff, Nb_PG, data, th, ind_OG_PG, PG_size, raster):
+    # Randomly generate coordinates in the image space
     PG_coor = np.random.choice(px * hr_coeff, size=(Nb_PG, 2), replace=False)
-    it = np.ravel_multi_index(np.asarray(PG_coor).T, data[:, :, 0].shape)  # 1D index of the coordinates in the image
-    coor_verif = data[:, :, 0].take(it)  # Extracting the corresponding 16O counts of the coordinates
-    dup = np.array([1])
-    radius = ((PG_size / 2) * 1E-3 / (raster / (px * hr_coeff))).reshape(Nb_PG)  # Radius calculation of the grains in the HR dimensions
-    # If any 16O counts select as the center of a grain is below the masking threshold OR overlaps the OG-PG coordinates OR the artificial coordinates have duplicates
-    ct=0
-    while (any(coor_verif < data[:, :, 0].max() * th) is True) or (dup.size != 0):  # FIXME no verification of overlap with OG_PG
-        ind_badcoor = np.where(coor_verif < data[:, :, 0].max() * th)  # Location of the problematic coordinates
-        if coor_verif in ind_OG_PG: ind_badcoor = ind_badcoor.append(np.where(coor_verif in ind_OG_PG))  # if one grain location overlap the true PG coordinates
-        PG_coor[ind_badcoor] = np.random.choice(px * hr_coeff, size=(len(ind_badcoor[0]), 2), replace=False)  # Replacement of the problematic coordinates
-        it = np.ravel_multi_index(np.asarray(PG_coor).T, data[:, :, 0].shape)  # Update of the 1D index
-        coor_verif = data[:, :, 0].take(it)  # Update of the 16O counts
-        u, c = np.unique(PG_coor, return_counts=True)  # check for duplicates
-        dup = u[c > 1]
+    data_main = data[:, :, 0]
+    data_max = data_main.max()  # Max value is computed once, reused
+    radius = (PG_size * 1E-3 / (raster / (px * hr_coeff)) / 2).reshape(Nb_PG)  # Pre-compute radii
+
+    # Flatten data once for efficient access in the loop
+    flat_data_main = data_main.ravel()
+    it = np.ravel_multi_index(PG_coor.T, data_main.shape)  # 1D index of the coordinates
+    coor_verif = flat_data_main[it]  # Get 16O counts at generated positions
+
+    ct = 0
+    while True:
+        # Check for bad coordinates (below threshold or overlap with OG_PG)
+        ind_badcoor = np.where(coor_verif < data_max * th)[0]
+        if len(ind_OG_PG) > 0:  # If OG_PG provided, check for overlaps
+            ind_badcoor = np.union1d(ind_badcoor, np.where(np.isin(PG_coor, ind_OG_PG).all(axis=1))[0])
+
+        # Check for duplicates
+        _, counts = np.unique(PG_coor, axis=0, return_counts=True)
+        dup = np.where(counts > 1)[0]
+
+        if len(ind_badcoor) == 0 and len(dup) == 0:
+            break  # Exit if no bad coordinates and no duplicates
+
+        if len(ind_badcoor) > 0:  # Replace bad coordinates
+            PG_coor[ind_badcoor] = np.random.choice(px * hr_coeff, size=(len(ind_badcoor), 2), replace=False)
+            it = np.ravel_multi_index(PG_coor.T, data_main.shape)
+            coor_verif = flat_data_main[it]
+
+        # Overlap detection
+        dist_matrix = np.sqrt((PG_coor[:, 0, None] - PG_coor[:, 0])**2 + (PG_coor[:, 1, None] - PG_coor[:, 1])**2)
+        overlap_matrix = dist_matrix < (radius[:, None] + radius[None, :])
+        np.fill_diagonal(overlap_matrix, False)  # Ignore self-comparison
+
+        if overlap_matrix.any():
+            overlap_indices = np.argwhere(overlap_matrix)
+            for i in overlap_indices:
+                PG_coor[i[0], :] = np.random.choice(px * hr_coeff, size=(1, 2), replace=False)
+                it = np.ravel_multi_index(PG_coor.T, data_main.shape)
+                coor_verif = flat_data_main[it]
+
         ct += 1
         if ct > 10:
-            print('Overloop', ct)
+            print("Overloop", ct)
             break
 
-        # Check for potential overlaps
-        norm = np.sqrt((PG_coor[:, 0][None, :] - PG_coor[:, 0][:, None]) ** 2 + (PG_coor[:, 1][None, :] - PG_coor[:, 1][:, None]) ** 2)
-        overlap = norm < (radius[None, :] + radius[:, None])
-        overlap = np.tril(overlap, -1)  # remove values above diagonal as they are the symmetrical of the other half
-        while overlap.any():
-            ind = np.argwhere(overlap == True)
-            for i in ind: PG_coor[i[0], :] = np.random.choice(px * hr_coeff, size=(1, 2), replace=False)
-            norm = np.sqrt((PG_coor[:, 0][None, :] - PG_coor[:, 0][:, None]) ** 2 + (PG_coor[:, 1][None, :] - PG_coor[:, 1][:, None]) ** 2)
-            overlap = norm < (radius[None, :] + radius[:, None])
-            np.fill_diagonal(overlap, False)
-
-    mask_PG = create_circular_mask_multiple(px * hr_coeff, px * hr_coeff, center=PG_coor, radius=radius)  # Mask creation of the grains' pixels
-    imhr_ini = np.copy(data)  # Copying the HR images channels to avoid altering them
+    mask_PG = create_circular_mask_multiple(px * hr_coeff, px * hr_coeff, center=PG_coor, radius=radius)
+    imhr_ini = np.copy(data)  # Copy the HR images to avoid alteration
 
     return imhr_ini, PG_coor, radius, mask_PG
 
@@ -105,11 +130,38 @@ def Iso_Ratio(elem):
     return R
 
 
+def approx_poisson(data):
+    mean = data
+    std_dev = np.sqrt(data)
+    return np.random.normal(mean, std_dev).astype(int)
+
+
+def GD_AdamNesperov(target, measured_simulations, initial_simulations, learning_rate):
+    X = measured_simulations[0]
+    Y = measured_simulations[1]
+    Z = measured_simulations[2]
+
+    # norm3D_norm = np.asarray((((X-target[0])/target[0])**2 +
+    #                      ((Y-target[1])/target[1])**2 +
+    #                      ((Z-target[2])/target[2])**2)**0.5)
+
+    norm3D_norm = np.asarray((np.abs((X - target[0]) / target[0]) +
+                              np.abs((Y - target[1]) / target[1]) +
+                              np.abs((Z - target[2]) / target[2])) ** 0.5)
+
+    grad = np.array([(X - target[0]) / (norm3D_norm * target[0] ** 2),
+                     (Y - target[1]) / (norm3D_norm * target[1] ** 2),
+                     (Z - target[2]) / (norm3D_norm * target[2] ** 2)])
+
+    return initial_simulations.T - learning_rate, norm3D_norm, grad
+
+
 # %% Simulation v6 : For automatization on PG from tables using multiple isotopic ratios simultaneously
 def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size=None, boxcar_px=None, OG_grain=None,
                     standard=None, smart=None, verif=None,
                     display='OFF'):
-    ## Check inputs
+
+    #---------------------- Check inputs
 
     np.seterr(divide='ignore')
 
@@ -182,6 +234,14 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
         file = random.choice(os.listdir(path_realim))
         file = path_realim + file
     s = sims.SIMS(file)
+    # image_header=s.header['Image']
+    # raster=image_header['raster']/1000
+    # px=image_header['width']
+    #
+    # isotope_data = [s.data.loc[Iso[i]].sum(axis=0).values for i in range(N_iso)]
+    # realcts = np.stack(isotope_data,axis=2).astype(np.uint8)  # Has to be converted into uint8 for the cv2.resize function
+
+
     raster = s.header['Image']['raster'] / 1000
     px = s.header['Image']['width']
     realcts = np.zeros((s.header['Image']['width'], s.header['Image']['height'], N_iso))
@@ -225,8 +285,19 @@ def PG_simulationv6(file=None, elem=None, PG_delta=None, PG_size=None, beam_size
     # 1. A new image is created for each isotopes from the original ones. Each pixel value is used as a mean for a poisson distribution of which a new pixel value is interpolated. Then the images are beam blurred and boxcar smoothed.
     # 2. We started by applying the gaussian blurr before interpolation new values from a poisson distribution for each pixel of each isotope image. Then the image is boxcar smoothed.
 
-    # Simulation including the presolar grains
-    im_poiss = np.random.poisson(imhr_ini_PG)
+    # Poissonian random pixel using numpy
+    # im_poiss = np.random.poisson(imhr_ini_PG) # Simulation including the presolar grains
+
+    # Poissonian random pixel using approximation function (Most efficient method)
+    im_poiss = approx_poisson(imhr_ini_PG)
+
+    # # Poissonian random pixel using GPU for parallelism
+    # # Convert the NumPy array to a CuPy array
+    # imhr_ini_PG_gpu = cp.asarray(imhr_ini_PG)
+    # # Apply Poisson sampling on the GPU
+    # result_gpu = cp.random.poisson(imhr_ini_PG_gpu)
+    # # Convert back to NumPy if needed
+    # im_poiss = cp.asnumpy(result_gpu)
 
     # ----- Image size reduction with beam blurr then boxcar
     gauss_ker = np.round(fwhm_hr * 2).astype(int)
