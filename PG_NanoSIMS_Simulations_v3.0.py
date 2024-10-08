@@ -18,8 +18,8 @@ Implement gradient descent methodoly
 
 try:
     from IPython import get_ipython
-
     get_ipython().run_line_magic('reset', '-f')
+
 except:
     pass
 
@@ -41,32 +41,21 @@ import time
 import tkinter as tk
 from tkinter import filedialog
 
-from PG_simulations_func import PG_simulationv6, create_circular_mask
+import cProfile
+import pstats
+
+from PG_simulations_func import PG_simulationv6, create_circular_mask, GD_AdamNesperov
 
 # plt.ioff()
 matplotlib.rcParams['interactive'] = False
 
-def GD_AdamNesperov(target, measured_simulations, initial_simulations, learning_rate):
-    X = measured_simulations[0]
-    Y = measured_simulations[1]
-    Z = measured_simulations[2]
 
-    # norm3D_norm = np.asarray((((X-target[0])/target[0])**2 +
-    #                      ((Y-target[1])/target[1])**2 +
-    #                      ((Z-target[2])/target[2])**2)**0.5)
-
-    norm3D_norm = np.asarray((np.abs((X - target[0]) / target[0]) +
-                              np.abs((Y - target[1]) / target[1]) +
-                              np.abs((Z - target[2]) / target[2])) ** 0.5)
-
-    grad = np.array([(X - target[0]) / (norm3D_norm * target[0] ** 2),
-                     (Y - target[1]) / (norm3D_norm * target[1] ** 2),
-                     (Z - target[2]) / (norm3D_norm * target[2] ** 2)])
-
-    return initial_simulations.T - learning_rate, norm3D_norm, grad
 
 
 if __name__ == "__main__":
+
+    # with cProfile.Profile() as pr:
+
     plt.close("all")
 
     # %% Grains and acquisition characteristics
@@ -171,7 +160,7 @@ if __name__ == "__main__":
 
             it = 0
             fres, axres = plt.subplots(2, iterations, subplot_kw={"projection": "3d"})
-            axres=axres.ravel()
+            axres = axres.ravel()
             f_adnesp, ax_adnesp = plt.subplots(4, iterations)
 
             for k in range(0, iterations):
@@ -452,6 +441,10 @@ if __name__ == "__main__":
     end = time.time()
     print('Elapsed time: ' + str(end - start) + ' s')
 
+    # results = pstats.Stats(pr)
+    # results.sort_stats(pstats.SortKey.TIME)
+    # results.print_stats()
+
 
 #%%
 
@@ -518,4 +511,4 @@ mng = plt.get_current_fig_manager()
 ### works on Ubuntu??? >> did NOT working on windows
 # mng.resize(*mng.window.maxsize())
 mng.window.state('zoomed') #works fine on Windows!
-plt.show()
+plt.show(block = True)
