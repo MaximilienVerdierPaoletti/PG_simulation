@@ -26,7 +26,7 @@ from mpl_toolkits.axes_grid1.inset_locator import (
 from collections.abc import Iterable
 
 # Import synthetic image generation functions
-from synthetic_image_generator import (
+from .synthetic_image_generator import (
     create_circular_mask,
     PG_coor_mask,
     generate_synthetic_image,

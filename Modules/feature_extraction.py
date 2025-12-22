@@ -10,7 +10,7 @@ including mask creation, contour detection, diameter calculation, and delta valu
 
 import numpy as np
 import skimage.measure
-from synthetic_image_generator import create_circular_mask
+from .synthetic_image_generator import create_circular_mask
 
 
 def select_sigma_delta_maps(plots, plots_title, grain_delta):

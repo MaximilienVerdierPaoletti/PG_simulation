@@ -44,8 +44,8 @@ import pstats
 from datetime import datetime
 from tqdm import tqdm
 
-from PG_simulations_func import PG_simulationv6
-from gradient_descent import (
+from Modules.PG_simulations_func import PG_simulationv6
+from Modules.gradient_descent import (
     GD_AdamNesperov,
     initialize_gradient_descent_parameters,
     update_gradient_descent_parameters,
@@ -53,11 +53,11 @@ from gradient_descent import (
     save_norm_to_summary,
     compute_cost,
 )
-from feature_extraction import (
+from Modules.feature_extraction import (
     select_sigma_delta_maps,
     extract_grain_features,
 )
-from plots import (
+from Modules.plots import (
     initialize_result_figures,
     plot_measured_grain,
     plot_simulated_grain,
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     # ---- Number of outer and inner iterations
     iterations = 1
-    max_iteration = 20
+    max_iteration = 10
     cost_goal = 0.4
 
     # ---- Legend of summary figure (fres) for each measured grain

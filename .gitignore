@@ -156,6 +156,17 @@ Thumbs.db
 !Data_for_test/
 !Data_for_test/**
 
+# Profiling files and folders
+*.prof
+*.pstats
+profiling_results/
+profile/
+profiling/
+.profiling/
+*.profile
+profile_*.txt
+profile_*.log
+
 # Project specific
 uv.lock
 
