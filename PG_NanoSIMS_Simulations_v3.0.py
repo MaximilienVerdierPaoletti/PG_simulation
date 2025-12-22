@@ -33,9 +33,7 @@ import numpy as np
 import pandas as pd  # enables the use of dataframe
 import matplotlib
 import matplotlib.pyplot as plt  # Enables plotting of data
-from mpl_toolkits import mplot3d
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.lines import Line2D
 from matplotlib import cm
 import time
 import tkinter as tk
@@ -43,6 +41,7 @@ from tkinter import filedialog
 
 import cProfile
 import pstats
+from datetime import datetime
 from tqdm import tqdm
 
 from PG_simulations_func import PG_simulationv6
@@ -58,13 +57,39 @@ from feature_extraction import (
     select_sigma_delta_maps,
     extract_grain_features,
 )
+from plots import (
+    initialize_result_figures,
+    plot_measured_grain,
+    plot_simulated_grain,
+    plot_gradient_descent_parameters,
+    plot_closest_matches_iteration,
+    plot_closest_matches_final,
+    finalize_result_figures,
+    save_figure_to_pdf,
+    set_gradient_descent_titles,
+    create_legend_elements,
+)
 
 # plt.ioff()
 matplotlib.rcParams["interactive"] = False
 
 
 if __name__ == "__main__":
-    # with cProfile.Profile() as pr:
+    # ========================================================================
+    # PROFILING CONFIGURATION
+    # Set ENABLE_PROFILING to True to enable profiling
+    # ========================================================================
+    ENABLE_PROFILING = False  # Set to False to disable profiling
+    PROFILING_OUTPUT_DIR = "profiling_results"
+
+    # Create profiling output directory if it doesn't exist
+    if ENABLE_PROFILING:
+        os.makedirs(PROFILING_OUTPUT_DIR, exist_ok=True)
+        pr = cProfile.Profile()
+        pr.enable()
+        print(
+            f"[PROFILING] Profiling enabled. Results will be saved to '{PROFILING_OUTPUT_DIR}/'"
+        )
 
     plt.close("all")
 
@@ -84,20 +109,14 @@ if __name__ == "__main__":
     delta_database.extend(range(2000, 21000, 1000))
 
     # ---- Number of outer and inner iterations
-    iterations = 2
+    iterations = 1
     max_iteration = 20
     cost_goal = 0.4
 
     # ---- Legend of summary figure (fres) for each measured grain
     lines = []
     labels = []
-    point_inner = Line2D(
-        [0], [0], marker="s", mfc="None", mec="k", linestyle="", markersize=10
-    )
-    point_matchfinal = Line2D(
-        [0], [0], marker="o", mfc="None", mec="g", linestyle="", markersize=10
-    )
-    label_points = ["Best matches of this iteration", "Best matches all iterations"]
+    point_inner, point_matchfinal, label_points = create_legend_elements()
     c = cm.rainbow(np.linspace(0, 1, Nb_PG))
 
     # --- Initialization of PDF figure summary
@@ -226,9 +245,7 @@ if __name__ == "__main__":
             # %% Loops on simulations
 
             it = 0
-            fres, axres = plt.subplots(2, iterations, subplot_kw={"projection": "3d"})
-            axres = axres.ravel()
-            f_adnesp, ax_adnesp = plt.subplots(4, iterations)
+            fres, axres, f_adnesp, ax_adnesp = initialize_result_figures(iterations)
 
             for k in tqdm(
                 range(0, iterations),
@@ -238,24 +255,7 @@ if __name__ == "__main__":
                 leave=False,
             ):
                 all_simulations[imagename][k] = {}
-                axres[k].plot(
-                    grain_size,
-                    grain_delta.iloc[:, 0].item(),
-                    grain_delta.iloc[:, 1].item(),
-                    "sk",
-                    markersize=12,
-                    label="Measured presolar grain",
-                    zorder=10,
-                )
-                axres[k + iterations].plot(
-                    grain_size,
-                    grain_delta.iloc[:, 0].item(),
-                    grain_delta.iloc[:, 1].item(),
-                    "sk",
-                    markersize=12,
-                    label="Measured presolar grain",
-                    zorder=10,
-                )
+                plot_measured_grain(axres, k, iterations, grain_size, grain_delta)
 
                 # -----------------------------------------------------------------#
                 # Grain simulations conditions
@@ -324,8 +324,7 @@ if __name__ == "__main__":
                         )
 
                         if f_OG is not None:
-                            f_OG.suptitle(imagename)
-                            pp.savefig(f_OG, transparent=True, dpi=100)
+                            save_figure_to_pdf(f_OG, pp, title=imagename)
                         ax = ax.ravel()
 
                         # Sigma and Delta map selection based on anomalous ratio
@@ -359,23 +358,8 @@ if __name__ == "__main__":
                                 i,
                             )
 
-                            axres[k].plot(
-                                Diam,
-                                delta_values[0],
-                                delta_values[1],
-                                "o",
-                                color=c[i],
-                                markersize=10,
-                                alpha=0.5,
-                            )
-                            axres[k + iterations].plot(
-                                Diam,
-                                delta_values[0],
-                                delta_values[1],
-                                "o",
-                                color=c[i],
-                                markersize=10,
-                                alpha=0.5,
+                            plot_simulated_grain(
+                                axres, k, iterations, Diam, delta_values, c, i
                             )
                             ax = ax.ravel()
                             for h in range(0, len(ax)):
@@ -431,8 +415,7 @@ if __name__ == "__main__":
                         f.set_size_inches(16, 10)
                         it = +1
 
-                        pp.savefig(f, transparent=True, dpi=100)
-                        plt.close(f)
+                        save_figure_to_pdf(f, pp)
 
                         for im_it in range(0, len(plots_title)):
                             all_simulations[imagename][k][j][plots_title[im_it]] = (
@@ -499,58 +482,9 @@ if __name__ == "__main__":
                     norm_summary = save_norm_to_summary(norm3D, norm_summary)
 
                     # Study of the behavior of parameters in gradient descent
-                    for m in range(9):  # Loop on simulated grains
-                        ax_adnesp[0, k].plot(
-                            j, norm3D[m], "v", mec=c[m], mfc="none", linewidth=3
-                        )  # Cost function (i.e., norm)
-                        ax_adnesp[1, k].plot(
-                            j,
-                            decay_adam[0].reshape(1, 9)[0, m],
-                            "o",
-                            mec=c[m],
-                            mfc="none",
-                            linewidth=3,
-                        )  # vt parameter in adam protocol on size
-                        ax_adnesp[1, k].plot(
-                            j,
-                            momentum_nesperov_adam[0].reshape(1, 9)[0, m],
-                            "s",
-                            mec=c[m],
-                            mfc="none",
-                            linewidth=3,
-                        )  # mt parameter in nadam protocol on size
-                        ax_adnesp[2, k].plot(
-                            j,
-                            decay_adam[1].reshape(1, 9)[0, m],
-                            "o",
-                            mec=c[m],
-                            mfc="None",
-                            linewidth=3,
-                        )  # vt parameter in adam protocol on d17O
-                        ax_adnesp[2, k].plot(
-                            j,
-                            momentum_nesperov_adam[1].reshape(1, 9)[0, m],
-                            "s",
-                            mec=c[m],
-                            mfc="None",
-                            linewidth=3,
-                        )  # mt parameter in nadam protocol on d17O
-                        ax_adnesp[3, k].plot(
-                            j,
-                            decay_adam[2].reshape(1, 9)[0, m],
-                            "o",
-                            mec=c[m],
-                            mfc="None",
-                            linewidth=3,
-                        )  # vt parameter in adam protocol on d18O
-                        ax_adnesp[3, k].plot(
-                            j,
-                            momentum_nesperov_adam[2].reshape(1, 9)[0, m],
-                            "s",
-                            mec=c[m],
-                            mfc="None",
-                            linewidth=3,
-                        )  # mt parameter in nadam protocol on d18O
+                    plot_gradient_descent_parameters(
+                        ax_adnesp, k, j, norm3D, decay_adam, momentum_nesperov_adam, c
+                    )
 
                     del PG_size, PG_delta
 
@@ -574,32 +508,10 @@ if __name__ == "__main__":
                 ].index
                 closest_match = sim_selgrain.loc[closest_match_index, :]
 
-                axres[k].plot(
-                    closest_match["Measured diameter (nm)"],
-                    closest_match["Measured " + Ratio_names[0]],
-                    closest_match["Measured " + Ratio_names[1]],
-                    "s",
-                    mec="k",
-                    mfc="None",
-                    markersize=10,
-                    zorder=5,
-                    linewidth=10,
+                plot_closest_matches_iteration(
+                    axres, k, iterations, closest_match, Ratio_names
                 )
-                axres[k + iterations].plot(
-                    closest_match["Measured diameter (nm)"],
-                    closest_match["Measured " + Ratio_names[0]],
-                    closest_match["Measured " + Ratio_names[1]],
-                    "s",
-                    mec="k",
-                    mfc="None",
-                    markersize=10,
-                    zorder=5,
-                    linewidth=10,
-                )
-                axres[k].set_title("Iteration #" + str(k), fontsize=12)
-
-                ax_adnesp[0, k].set_title("Outer iteration : " + str(k), fontsize=18)
-                ax_adnesp[3, k].set_xlabel("Inner iteration", fontsize=15)
+                set_gradient_descent_titles(ax_adnesp, k)
 
             # Look for the closest match throughout all the iterations
             # norm = (np.abs(summary['Measured diameter'].divide(grain_size) - 1) + (np.abs(summary[Ratio_names].div(grain_delta.values) - 1)).sum(axis=1)) ** 0.5
@@ -608,69 +520,17 @@ if __name__ == "__main__":
             ].index
             closest_match_final = sim_selgrain.loc[closest_match_index, :]
 
-            # for ax in axres:
-            #     ax.plot(closest_match_final['Measured Radius']*2,closest_match_final['d17O'],'o',mec='g',mfc='None',markersize=10,zorder=5,linewidth=2)
-
-            for l in range(0, iterations):
-                # axres[0, l].plot(closest_match_final['Measured diameter'], closest_match_final[Ratio_names[0]], closest_match_final[Ratio_names[1]], 'o', mec='g', mfc='None',
-                #                  markersize=10, zorder=5, linewidth=5)
-                # axres[1, l].plot(closest_match_final['Measured diameter'], closest_match_final[Ratio_names[0]], closest_match_final[Ratio_names[1]], 'o', mec='g', mfc='None',
-                #                  markersize=10, zorder=5, linewidth=5)
-                # axres[1, l].set_xlim3d([int(grain_size * 0.7), int(grain_size * 1.3)])
-                # axres[1, l].set_ylim3d([int(grain_delta[Ratio_names[0]].item() * 0.5), int(grain_delta[Ratio_names[0]].item() * 1.5)])
-                # axres[1, l].set_zlim3d([int(grain_delta[Ratio_names[1]].item() * 0.5), int(grain_delta[Ratio_names[1]].item() * 1.5)])
-                axres[l].plot(
-                    closest_match_final["Measured diameter (nm)"],
-                    closest_match_final["Measured " + Ratio_names[0]],
-                    closest_match_final["Measured " + Ratio_names[1]],
-                    "o",
-                    mec="g",
-                    mfc="None",
-                    markersize=10,
-                    zorder=5,
-                    linewidth=5,
-                )
-                axres[l + iterations].plot(
-                    closest_match_final["Measured diameter (nm)"],
-                    closest_match_final["Measured " + Ratio_names[0]],
-                    closest_match_final["Measured " + Ratio_names[1]],
-                    "o",
-                    mec="g",
-                    mfc="None",
-                    markersize=10,
-                    zorder=5,
-                    linewidth=5,
-                )
-                axres[l + iterations].set_xlim3d(
-                    [int(grain_size * 0.7), int(grain_size * 1.3)]
-                )
-                axres[l + iterations].set_ylim3d(
-                    [
-                        int(grain_delta[Ratio_names[0]].item() * 0.5),
-                        int(grain_delta[Ratio_names[0]].item() * 1.5),
-                    ]
-                )
-                axres[l + iterations].set_zlim3d(
-                    [
-                        int(grain_delta[Ratio_names[1]].item() * 0.5),
-                        int(grain_delta[Ratio_names[1]].item() * 1.5),
-                    ]
-                )
-
-                axres[l].set_xlabel("Grain diameter (nm)", fontsize=14)
-                axres[l].set_ylabel(Ratio_names[0], fontsize=14)
-                axres[l].set_zlabel(Ratio_names[1], fontsize=14)
-                axres[l + iterations].set_xlabel("Grain diameter (nm)", fontsize=14)
-                axres[l + iterations].set_ylabel(Ratio_names[0], fontsize=14)
-                axres[l + iterations].set_zlabel(Ratio_names[1], fontsize=14)
+            plot_closest_matches_final(
+                axres,
+                iterations,
+                closest_match_final,
+                Ratio_names,
+                grain_size,
+                grain_delta,
+            )
 
             lines.extend((point_inner, point_matchfinal))
             labels.extend(label_points)
-            fres.suptitle(
-                imagename + "\n grain : " + str(grain.NAME.item()), fontsize=15
-            )
-            # axres[0, 0].legend(lines, labels, loc='best', ncol=2)
-            axres[0].legend(lines, labels, loc="best", ncol=2)
 
             # f_norm.suptitle(imagename+'\n grain : '+str(grain.NAME.item()),fontsize=15)
             # f_norm.set_size_inches(16, 10)
@@ -762,18 +622,19 @@ if __name__ == "__main__":
             pbar_overall.update(1)
             pbar_overall.set_postfix({"completed": f"{grain_counter}/{total_grains}"})
 
-        ax_adnesp[0, 0].set_ylabel("Cost function (norm)", fontsize=15)
-        ax_adnesp[1, 0].set_ylabel("Size", fontsize=15)
-        ax_adnesp[2, 0].set_ylabel(Ratio_names[0], fontsize=15)
-        ax_adnesp[3, 0].set_ylabel(Ratio_names[1], fontsize=15)
-        # for l in range(3): ax_adnesp[0, l].set_yscale('log')
-        f_adnesp.suptitle("Evolution of the gradient descent parameters", fontsize=22)
-
-        fres.set_size_inches(16, 10)
-        f_adnesp.set_size_inches(16, 10)
-
-        pp.savefig(fres, transparent=True, dpi=100)
-        pp.savefig(f_adnesp, transparent=True, dpi=100)
+        finalize_result_figures(
+            fres,
+            f_adnesp,
+            axres,
+            ax_adnesp,
+            imagename,
+            grain.NAME.item(),
+            Ratio_names,
+            iterations,
+            lines,
+            labels,
+            pp,
+        )
 
     plt.ion()
     plt.show()
@@ -791,9 +652,57 @@ if __name__ == "__main__":
     end = time.time()
     print("Elapsed time: " + str(end - start) + " s")
 
-    # results = pstats.Stats(pr)
-    # results.sort_stats(pstats.SortKey.TIME)
-    # results.print_stats()
+    # ========================================================================
+    # PROFILING RESULTS OUTPUT
+    # ========================================================================
+    if ENABLE_PROFILING:
+        pr.disable()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Save detailed profiling statistics
+        stats_file = os.path.join(
+            PROFILING_OUTPUT_DIR, f"profile_stats_{timestamp}.txt"
+        )
+        with open(stats_file, "w") as f:
+            stats = pstats.Stats(pr, stream=f)
+            stats.sort_stats(pstats.SortKey.TIME)
+            stats.print_stats()
+            print(f"\n[PROFILING] Detailed statistics saved to: {stats_file}")
+
+        # Save cumulative time statistics (sorted by cumulative time)
+        cumtime_file = os.path.join(
+            PROFILING_OUTPUT_DIR, f"profile_cumtime_{timestamp}.txt"
+        )
+        with open(cumtime_file, "w") as f:
+            stats = pstats.Stats(pr, stream=f)
+            stats.sort_stats(pstats.SortKey.CUMULATIVE)
+            stats.print_stats(30)  # Top 30 functions
+            print(f"[PROFILING] Cumulative time statistics saved to: {cumtime_file}")
+
+        # Save per-call time statistics (sorted by per-call time)
+        percall_file = os.path.join(
+            PROFILING_OUTPUT_DIR, f"profile_percall_{timestamp}.txt"
+        )
+        with open(percall_file, "w") as f:
+            stats = pstats.Stats(pr, stream=f)
+            stats.sort_stats(pstats.SortKey.TIME)
+            stats.print_stats(30)  # Top 30 functions
+            print(f"[PROFILING] Per-call time statistics saved to: {percall_file}")
+
+        # Save profiling data in binary format for later analysis
+        profile_binary = os.path.join(PROFILING_OUTPUT_DIR, f"profile_{timestamp}.prof")
+        pr.dump_stats(profile_binary)
+        print(f"[PROFILING] Binary profile data saved to: {profile_binary}")
+        print(f"[PROFILING] To analyze later, use: python -m pstats {profile_binary}")
+
+        # Print summary to console
+        print("\n" + "=" * 80)
+        print("PROFILING SUMMARY - Top 20 functions by total time")
+        print("=" * 80)
+        stats = pstats.Stats(pr)
+        stats.sort_stats(pstats.SortKey.TIME)
+        stats.print_stats(20)
+        print("=" * 80 + "\n")
 
 
 # %%

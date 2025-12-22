@@ -16,7 +16,7 @@ from synthetic_image_generator import create_circular_mask
 def select_sigma_delta_maps(plots, plots_title, grain_delta):
     """
     Select sigma and delta maps based on the most anomalous ratio.
-    
+
     Parameters
     ----------
     plots : list
@@ -25,7 +25,7 @@ def select_sigma_delta_maps(plots, plots_title, grain_delta):
         List of plot titles corresponding to plots
     grain_delta : pandas.DataFrame
         DataFrame containing delta values for the grain
-        
+
     Returns
     -------
     sigma_map : list
@@ -42,15 +42,11 @@ def select_sigma_delta_maps(plots, plots_title, grain_delta):
     # Locate most anomalous ratio. It will be the one used for contouring
     ind_anomalous = np.argmax(np.abs(grain_delta))
     anomalous_ratio_name = grain_delta.columns[ind_anomalous].replace("d-", "")
-    
+
     # Find indices of sigma and delta maps
-    sigma_map_index = [
-        plots_title.index(n) for n in plots_title if "Sigma" in n
-    ]
-    delta_map_index = [
-        plots_title.index(n) for n in plots_title if "Delta" in n
-    ]
-    
+    sigma_map_index = [plots_title.index(n) for n in plots_title if "Sigma" in n]
+    delta_map_index = [plots_title.index(n) for n in plots_title if "Delta" in n]
+
     # Find indices of anomalous sigma and delta maps
     sigma_anomalous_map_index = [
         sigma_map_index.index(n)
@@ -62,11 +58,11 @@ def select_sigma_delta_maps(plots, plots_title, grain_delta):
         for n in delta_map_index
         if anomalous_ratio_name in plots_title[n]
     ]
-    
+
     # Extract sigma and delta maps
     sigma_map = [plots[n] for n in sigma_map_index]
     delta_map = [plots[n] for n in delta_map_index]
-    
+
     return (
         sigma_map,
         delta_map,
@@ -90,7 +86,7 @@ def extract_grain_features(
 ):
     """
     Extract features from a single grain simulation.
-    
+
     Parameters
     ----------
     PG_size_batch : numpy.ndarray
@@ -113,7 +109,7 @@ def extract_grain_features(
         Index of the anomalous delta map
     grain_index : int
         Index of the grain to extract features from
-        
+
     Returns
     -------
     Diam : float
@@ -130,13 +126,8 @@ def extract_grain_features(
         Thresholded contour coordinates (x, y)
     """
     # Calculate radius for mask creation
-    radius = (
-        (np.asarray(PG_size_batch[grain_index]) / 2)
-        * 1e-3
-        / (raster / px)
-        * 1.5
-    )
-    
+    radius = (np.asarray(PG_size_batch[grain_index]) / 2) * 1e-3 / (raster / px) * 1.5
+
     # Create circular mask for the grain
     mask = create_circular_mask(
         px,
@@ -144,14 +135,14 @@ def extract_grain_features(
         center=np.floor_divide(PG_coor, 8)[grain_index],
         radius=radius,
     )
-    
+
     # Find initial contour
     contour = skimage.measure.find_contours(mask != 0, 0.5)
     ysel, xsel = contour[0].T
-    
+
     # Extract coordinates of masked pixels
     x, y = np.nonzero(mask)
-    
+
     # Apply sigma threshold to find significant pixels
     I = np.where(
         sigma_map[sigma_anomalous_map_index[0]][x, y].data
@@ -159,11 +150,11 @@ def extract_grain_features(
     )
     X = x[I]
     Y = y[I]
-    
+
     # Create thresholded mask
     mask_th = np.zeros_like(mask)
     mask_th[X, Y] = 1
-    
+
     # Calculate diameter from thresholded pixels
     Diam = (
         np.sqrt(
@@ -174,16 +165,16 @@ def extract_grain_features(
         * 1000
         * 2
     )
-    
+
     # Extract mean delta values for each ratio
     delta_values = np.array(
         [np.mean(delta_map[ratio_idx][X, Y]) for ratio_idx in range(len(delta_map))]
     )
-    
+
     # Find thresholded contour
     contour_th = skimage.measure.find_contours(mask_th == 1, 0.5)
     y_th, x_th = contour_th[0].T
-    
+
     return (
         Diam,
         delta_values,
@@ -207,7 +198,7 @@ def extract_features_for_all_grains(
 ):
     """
     Extract features for all grains in a simulation batch.
-    
+
     Parameters
     ----------
     PG_size : numpy.ndarray
@@ -228,7 +219,7 @@ def extract_features_for_all_grains(
         Index of the anomalous sigma map
     delta_anomalous_map_index : list
         Index of the anomalous delta map
-        
+
     Returns
     -------
     results : list
@@ -241,7 +232,7 @@ def extract_features_for_all_grains(
         - 'contour_thresholded': Thresholded contour coordinates
     """
     results = []
-    
+
     for batch_idx in range(PG_size.shape[0]):
         for grain_idx in range(PG_size.shape[1]):
             features = extract_grain_features(
@@ -256,15 +247,16 @@ def extract_features_for_all_grains(
                 delta_anomalous_map_index,
                 grain_idx,
             )
-            
-            results.append({
-                'diameter': features[0],
-                'delta_values': features[1],
-                'mask': features[2],
-                'mask_th': features[3],
-                'contour_initial': features[4],
-                'contour_thresholded': features[5],
-            })
-    
-    return results
 
+            results.append(
+                {
+                    "diameter": features[0],
+                    "delta_values": features[1],
+                    "mask": features[2],
+                    "mask_th": features[3],
+                    "contour_initial": features[4],
+                    "contour_thresholded": features[5],
+                }
+            )
+
+    return results
