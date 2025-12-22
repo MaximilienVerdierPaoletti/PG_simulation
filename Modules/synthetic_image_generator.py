@@ -7,7 +7,7 @@ from original images. It includes mask creation, PG coordinate generation, Poiss
 noise approximation, and core synthetic image generation logic.
 
 Extracted from:
-- PG_simulations_func.py: Mask creation, PG coordinate generation, Poisson approximation,
+- pg_grain_simulation.py: Mask creation, PG coordinate generation, Poisson approximation,
   and synthetic image generation logic
 
 Functions:

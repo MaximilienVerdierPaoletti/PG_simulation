@@ -45,7 +45,7 @@ In the pstats interactive shell:
 - `sort time` - Sort by total time
 - `sort cumulative` - Sort by cumulative time
 - `stats 20` - Show top 20 functions
-- `stats PG_simulations_func` - Show stats for specific module
+- `stats pg_grain_simulation` - Show stats for specific module
 - `stats PG_simulationv6` - Show stats for specific function
 
 ### Profiling Specific Functions

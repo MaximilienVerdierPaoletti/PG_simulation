@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 """
+Presolar grain simulation functions.
+
+This module contains the core simulation function for generating synthetic
+presolar grain images with isotopic ratios.
+
 Created on Fri 3 May 2024
 
 @author: mverdier
@@ -510,3 +515,4 @@ def PG_simulationv6(
     if verif == 1:
         return fig, axs, plots, plots_title, PG_coor, raster, px, f_OG
     return fig, axs, plots, plots_title, PG_coor, raster, px, None  # ,axinsert
+

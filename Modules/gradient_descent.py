@@ -6,7 +6,7 @@ This module contains all functions and utilities related to gradient descent
 optimization using the Adam-Nesterov algorithm.
 
 Extracted from:
-- PG_simulations_func.py: GD_AdamNesperov function
+- pg_grain_simulation.py: GD_AdamNesperov function (moved to this module)
 - PG_NanoSIMS_Simulations_v3.0.py: Parameter initialization, update logic,
   constraint application, and cost computation
 

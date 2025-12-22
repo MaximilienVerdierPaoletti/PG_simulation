@@ -44,7 +44,7 @@ import pstats
 from datetime import datetime
 from tqdm import tqdm
 
-from Modules.PG_simulations_func import PG_simulationv6
+from Modules.pg_grain_simulation import PG_simulationv6
 from Modules.gradient_descent import (
     GD_AdamNesperov,
     initialize_gradient_descent_parameters,
