@@ -46,7 +46,15 @@ import cProfile
 import pstats
 from tqdm import tqdm
 
-from PG_simulations_func import PG_simulationv6, create_circular_mask, GD_AdamNesperov
+from PG_simulations_func import PG_simulationv6, create_circular_mask
+from gradient_descent import (
+    GD_AdamNesperov,
+    initialize_gradient_descent_parameters,
+    update_gradient_descent_parameters,
+    apply_simulation_constraints,
+    save_norm_to_summary,
+    compute_cost,
+)
 
 # plt.ioff()
 matplotlib.rcParams["interactive"] = False
@@ -139,6 +147,7 @@ if __name__ == "__main__":
     col_res.append("Dilution on size (%)")
 
     summary = pd.DataFrame(columns=col)
+    norm_summary = None  # Initialize norm_summary for gradient descent tracking
 
     # -----------------------------------------------------------------#
     #### Grain characteristics extraction
@@ -254,35 +263,19 @@ if __name__ == "__main__":
                 PG_size = np.random.choice(size_range, Nb_PG).reshape(1, Nb_PG)
 
                 # ---- Gradient descent parameters
-                eta = (
-                    10
-                    ** np.round(
-                        np.log10(
-                            np.abs(
-                                np.concatenate(
-                                    (
-                                        PG_size.T,
-                                        np.array(PG_delta).reshape(
-                                            Nb_PG, len(Ratio_names)
-                                        ),
-                                    ),
-                                    axis=1,
-                                )
-                            )
-                        )
-                    )
-                    / 10
+                (
+                    eta,
+                    learning_rate,
+                    eps,
+                    beta_decay,
+                    beta_momentum,
+                    decay_mat,
+                    decay_adam,
+                    momentum_mat,
+                    momentum_adam,
+                ) = initialize_gradient_descent_parameters(
+                    PG_size, PG_delta, Nb_PG, n_ratios=len(Ratio_names)
                 )
-                learning_rate = eta
-                eps = 1e-8
-                beta_decay = 0.9
-                beta_momentum = 0.6
-                decay_mat = np.zeros(
-                    (3, Nb_PG)
-                )  # number of parameters (size, ratio1, ratio 2) x Nb of grains
-                decay_adam = np.zeros((3, Nb_PG))
-                momentum_mat = np.zeros((3, Nb_PG))
-                momentum_adam = np.zeros((3, Nb_PG))
 
                 # for j in range(0, zoom_iteration):
                 j = 0
@@ -513,34 +506,31 @@ if __name__ == "__main__":
                     [new_simu, norm3D, grad] = GD_AdamNesperov(
                         target, measured_simulations, initial_simulations, learning_rate
                     )
-                    decay_mat = decay_mat * beta_decay + (1 - beta_decay) * grad**2
-                    decay_adam = decay_mat / (1 - beta_decay ** (j + 1))
-                    momentum_mat = (
-                        beta_momentum * momentum_mat + (1 - beta_momentum) * grad
-                    )
-                    momentum_adam = momentum_mat / (1 - beta_momentum ** (j + 1))
-                    # learning_rate = (eta.T * momentum_adam / (decay_adam+eps)**0.5).T  # Learning rate for Adam Protocol
-                    momentum_nesperov_adam = (
-                        beta_momentum * momentum_adam + (1 - beta_momentum) * grad
-                    )
-                    learning_rate = (
-                        eta.T * momentum_nesperov_adam / (decay_adam + eps) ** 0.5
-                    ).T  # Learning rate for Adam Nesperov protocol
 
-                    new_simu.T[0] = np.where(new_simu.T[0] < 50, 100, new_simu.T[0])
-                    new_simu.T[1::] = np.where(
-                        new_simu.T[1::] <= -1000, -999, new_simu.T[1::]
+                    # Update gradient descent parameters
+                    (
+                        decay_mat,
+                        decay_adam,
+                        momentum_mat,
+                        momentum_adam,
+                        momentum_nesperov_adam,
+                        learning_rate,
+                    ) = update_gradient_descent_parameters(
+                        grad,
+                        decay_mat,
+                        momentum_mat,
+                        eta,
+                        beta_decay,
+                        beta_momentum,
+                        eps,
+                        j,
                     )
+
+                    # Apply constraints to updated simulations
+                    new_simu = apply_simulation_constraints(new_simu)
 
                     # Save cost function evolution (normalized norms)
-                    if "norm_summary" not in globals():
-                        norm_summary = pd.DataFrame(data=norm3D, columns=["Norm"])
-                    else:
-                        norm_summary = pd.concat(
-                            [norm_summary, pd.DataFrame(norm3D, columns=["Norm"])],
-                            axis=0,
-                            ignore_index=True,
-                        )
+                    norm_summary = save_norm_to_summary(norm3D, norm_summary)
 
                     # Study of the behavior of parameters in gradient descent
                     for m in range(9):  # Loop on simulated grains
@@ -602,17 +592,8 @@ if __name__ == "__main__":
                     PG_delta = np.c_[new_simu[:, 1], new_simu[:, 2]]
                     PG_delta = [PG_delta.tolist()]
 
-                    norm_selgrain = norm_summary.iloc[sim_selgrain.index]
-                    norm = norm_selgrain.loc[
-                        sim_selgrain.loc[sim_selgrain["Outer Iteration"] == k].index
-                    ]
-                    cost = (
-                        norm.sort_values(by="Norm", ascending=True)[0:nb_closest_match][
-                            0:nb_closest_match
-                        ]
-                        .mean()
-                        .item()
-                    )
+                    # Compute cost function
+                    cost = compute_cost(norm_summary, sim_selgrain, k, nb_closest_match)
                     j += 1
 
                 # Look for the closest match in all simulation of this outer iteration
