@@ -82,6 +82,13 @@ if __name__ == "__main__":
     ENABLE_PROFILING = False  # Set to False to disable profiling
     PROFILING_OUTPUT_DIR = "profiling_results"
 
+    # ========================================================================
+    # PLOT SAVING CONFIGURATION
+    # Set SAVE_ALL_PLOTS to False to save only: original data, 3D plots, and
+    # gradient descent parameter evolution plots (excludes simulation plots)
+    # ========================================================================
+    SAVE_ALL_PLOTS = True  # Set to False to save only essential plots
+
     # Create profiling output directory if it doesn't exist
     if ENABLE_PROFILING:
         os.makedirs(PROFILING_OUTPUT_DIR, exist_ok=True)
@@ -415,7 +422,11 @@ if __name__ == "__main__":
                         f.set_size_inches(16, 10)
                         it = +1
 
-                        save_figure_to_pdf(f, pp)
+                        # Save simulation plots only if SAVE_ALL_PLOTS is True
+                        if SAVE_ALL_PLOTS:
+                            save_figure_to_pdf(f, pp)
+                        else:
+                            plt.close(f)  # Close figure without saving to save memory
 
                         for im_it in range(0, len(plots_title)):
                             all_simulations[imagename][k][j][plots_title[im_it]] = (
