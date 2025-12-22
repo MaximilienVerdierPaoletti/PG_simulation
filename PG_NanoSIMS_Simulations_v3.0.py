@@ -46,7 +46,8 @@ import cProfile
 import pstats
 from tqdm import tqdm
 
-from PG_simulations_func import PG_simulationv6, create_circular_mask
+from PG_simulations_func import PG_simulationv6
+from synthetic_image_generator import create_circular_mask
 from gradient_descent import (
     GD_AdamNesperov,
     initialize_gradient_descent_parameters,

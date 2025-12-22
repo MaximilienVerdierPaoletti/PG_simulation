@@ -28,11 +28,11 @@ import pandas as pd
 def GD_AdamNesperov(target, measured_simulations, initial_simulations, learning_rate):
     """
     Gradient Descent function using Adam-Nesterov optimizer.
-    
+
     Computes the normalized 3D norm (cost function) and gradient for gradient descent
     optimization. The cost function is based on normalized absolute differences
     between target and measured values.
-    
+
     Parameters
     ----------
     target : array-like
@@ -49,7 +49,7 @@ def GD_AdamNesperov(target, measured_simulations, initial_simulations, learning_
         - initial_simulations[2] = initial ratio2 values
     learning_rate : array-like
         Learning rate matrix with shape (n_grains, 3) or compatible shape
-        
+
     Returns
     -------
     new_simu : array
@@ -87,14 +87,14 @@ def GD_AdamNesperov(target, measured_simulations, initial_simulations, learning_
 
     # Update parameters: new = old - learning_rate
     new_simu = initial_simulations.T - learning_rate
-    
+
     return new_simu, norm3D_norm, grad
 
 
 def initialize_gradient_descent_parameters(PG_size, PG_delta, Nb_PG, n_ratios=2):
     """
     Initialize gradient descent parameters for Adam-Nesterov optimizer.
-    
+
     Parameters
     ----------
     PG_size : array-like
@@ -105,7 +105,7 @@ def initialize_gradient_descent_parameters(PG_size, PG_delta, Nb_PG, n_ratios=2)
         Number of presolar grains
     n_ratios : int, optional
         Number of isotopic ratios (default: 2)
-        
+
     Returns
     -------
     eta : array
@@ -145,12 +145,12 @@ def initialize_gradient_descent_parameters(PG_size, PG_delta, Nb_PG, n_ratios=2)
         )
         / 10
     )
-    
+
     learning_rate = eta
     eps = 1e-8
     beta_decay = 0.9
     beta_momentum = 0.6
-    
+
     # Initialize matrices: (n_parameters, n_grains)
     # Parameters: [size, ratio1, ratio2, ...]
     n_params = 1 + n_ratios  # size + ratios
@@ -158,7 +158,7 @@ def initialize_gradient_descent_parameters(PG_size, PG_delta, Nb_PG, n_ratios=2)
     decay_adam = np.zeros((n_params, Nb_PG))
     momentum_mat = np.zeros((n_params, Nb_PG))
     momentum_adam = np.zeros((n_params, Nb_PG))
-    
+
     return (
         eta,
         learning_rate,
@@ -184,11 +184,11 @@ def update_gradient_descent_parameters(
 ):
     """
     Update gradient descent parameters using Adam-Nesterov algorithm.
-    
+
     This function implements the Adam optimizer with Nesterov momentum.
     It updates the decay (second moment) and momentum (first moment) estimates,
     computes bias-corrected estimates, and calculates the adaptive learning rate.
-    
+
     Parameters
     ----------
     grad : array
@@ -207,7 +207,7 @@ def update_gradient_descent_parameters(
         Small epsilon for numerical stability
     iteration : int
         Current iteration number (0-indexed)
-        
+
     Returns
     -------
     decay_mat : array
@@ -225,26 +225,22 @@ def update_gradient_descent_parameters(
     """
     # Update decay (second moment estimate)
     decay_mat = decay_mat * beta_decay + (1 - beta_decay) * grad**2
-    
+
     # Bias correction for decay
     decay_adam = decay_mat / (1 - beta_decay ** (iteration + 1))
-    
+
     # Update momentum (first moment estimate)
     momentum_mat = beta_momentum * momentum_mat + (1 - beta_momentum) * grad
-    
+
     # Bias correction for momentum
     momentum_adam = momentum_mat / (1 - beta_momentum ** (iteration + 1))
-    
+
     # Nesterov momentum (lookahead)
-    momentum_nesperov_adam = (
-        beta_momentum * momentum_adam + (1 - beta_momentum) * grad
-    )
-    
+    momentum_nesperov_adam = beta_momentum * momentum_adam + (1 - beta_momentum) * grad
+
     # Adaptive learning rate for Adam-Nesterov
-    learning_rate = (
-        eta.T * momentum_nesperov_adam / (decay_adam + eps) ** 0.5
-    ).T
-    
+    learning_rate = (eta.T * momentum_nesperov_adam / (decay_adam + eps) ** 0.5).T
+
     return (
         decay_mat,
         decay_adam,
@@ -255,14 +251,16 @@ def update_gradient_descent_parameters(
     )
 
 
-def apply_simulation_constraints(new_simu, min_size=50, default_size=100, min_delta=-1000, default_delta=-999):
+def apply_simulation_constraints(
+    new_simu, min_size=50, default_size=100, min_delta=-1000, default_delta=-999
+):
     """
     Apply physical constraints to updated simulation parameters.
-    
+
     Ensures that simulation parameters remain within physically reasonable bounds:
     - Grain sizes must be above a minimum threshold
     - Delta values must be above a minimum threshold
-    
+
     Parameters
     ----------
     new_simu : array
@@ -276,7 +274,7 @@ def apply_simulation_constraints(new_simu, min_size=50, default_size=100, min_de
         Minimum allowed delta value (default: -1000)
     default_delta : float, optional
         Default delta to use if below minimum (default: -999)
-        
+
     Returns
     -------
     new_simu : array
@@ -284,22 +282,22 @@ def apply_simulation_constraints(new_simu, min_size=50, default_size=100, min_de
     """
     # Constrain size (first column)
     new_simu.T[0] = np.where(new_simu.T[0] < min_size, default_size, new_simu.T[0])
-    
+
     # Constrain delta values (remaining columns)
     new_simu.T[1::] = np.where(
         new_simu.T[1::] <= min_delta, default_delta, new_simu.T[1::]
     )
-    
+
     return new_simu
 
 
 def compute_cost(norm_summary, sim_selgrain, k, nb_closest_match=3):
     """
     Compute the cost function from normalized norms.
-    
+
     The cost is the mean of the nb_closest_match smallest norms from
     the current outer iteration.
-    
+
     Parameters
     ----------
     norm_summary : pandas.DataFrame
@@ -310,7 +308,7 @@ def compute_cost(norm_summary, sim_selgrain, k, nb_closest_match=3):
         Current outer iteration number
     nb_closest_match : int, optional
         Number of closest matches to use for cost calculation (default: 3)
-        
+
     Returns
     -------
     cost : float
@@ -333,14 +331,14 @@ def compute_cost(norm_summary, sim_selgrain, k, nb_closest_match=3):
 def save_norm_to_summary(norm3D, norm_summary=None):
     """
     Save normalized norms to summary DataFrame.
-    
+
     Parameters
     ----------
     norm3D : array
         Array of normalized norms for current iteration
     norm_summary : pandas.DataFrame, optional
         Existing summary DataFrame to append to. If None, creates new one.
-        
+
     Returns
     -------
     norm_summary : pandas.DataFrame
@@ -355,4 +353,3 @@ def save_norm_to_summary(norm3D, norm_summary=None):
             ignore_index=True,
         )
     return norm_summary
-

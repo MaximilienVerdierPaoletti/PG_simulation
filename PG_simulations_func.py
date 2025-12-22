@@ -25,118 +25,16 @@ from mpl_toolkits.axes_grid1.inset_locator import (
 )  # to insert subplot within plot
 from collections.abc import Iterable
 
+# Import synthetic image generation functions
+from synthetic_image_generator import (
+    create_circular_mask,
+    PG_coor_mask,
+    generate_synthetic_image,
+)
 
 # Astronomy Specific Imports
 from astropy.convolution import convolve as ap_convolve
 from astropy.convolution import Box2DKernel
-
-
-# %% Mask creation function
-def create_circular_mask(h, w, center=None, radius=None):
-    if center is None:  # use the middle of the image
-        center = (int(w / 2), int(h / 2))
-    if radius is None:  # use the smallest distance between the center and image walls
-        radius = min(center[0], center[1], w - center[0], h - center[1])
-    Y, X = np.ogrid[:h, :w]
-    dist_from_center = np.sqrt((X - center[0]) ** 2 + (Y - center[1]) ** 2)
-    mask = dist_from_center <= radius
-    return mask
-
-
-# ------------- Mask creation for multiple PG with multiple or single radius at once
-def create_circular_mask_multiple(h, w, center=None, radius=None):
-    if center is None:  # default to the middle of the image
-        center = np.array([[int(w / 2), int(h / 2)]])
-    else:
-        center = np.array(center)
-
-    if radius is None:  # default to smallest distance from center
-        radius = np.array([min(c[0], c[1], w - c[0], h - c[1]) for c in center])
-    elif not isinstance(radius, Iterable):
-        radius = np.full(len(center), radius)
-
-    # Create grid for coordinates
-    Y, X = np.ogrid[:h, :w]
-
-    # Initialize mask as zeros (no need for np.empty)
-    mask = np.zeros((h, w), dtype=int)
-
-    # Vectorized computation of mask
-    for i, (cx, cy) in enumerate(center):
-        dist_from_center = np.sqrt((X - cx) ** 2 + (Y - cy) ** 2)
-        mask[dist_from_center <= radius[i]] = (
-            i + 1
-        )  # Values attributed to PG have to start at 1 as 0 will be the non presolar material in the image
-
-    return mask
-
-
-# %% PG coordinates mask function
-def PG_coor_mask(px, hr_coeff, Nb_PG, data, th, ind_OG_PG, PG_size, raster):
-    # Randomly generate coordinates in the image space
-    PG_coor = np.random.choice(px * hr_coeff, size=(Nb_PG, 2), replace=False)
-    data_main = data[:, :, 0]
-    data_max = data_main.max()  # Max value is computed once, reused
-    radius = (PG_size * 1e-3 / (raster / (px * hr_coeff)) / 2).reshape(
-        Nb_PG
-    )  # Pre-compute radii
-
-    # Flatten data once for efficient access in the loop
-    flat_data_main = data_main.ravel()
-    it = np.ravel_multi_index(PG_coor.T, data_main.shape)  # 1D index of the coordinates
-    coor_verif = flat_data_main[it]  # Get 16O counts at generated positions
-
-    ct = 0
-    while True:
-        # Check for bad coordinates (below threshold or overlap with OG_PG)
-        ind_badcoor = np.where(coor_verif < data_max * th)[0]
-        if len(ind_OG_PG) > 0:  # If OG_PG provided, check for overlaps
-            ind_badcoor = np.union1d(
-                ind_badcoor, np.where(np.isin(PG_coor, ind_OG_PG).all(axis=1))[0]
-            )
-
-        # Check for duplicates
-        _, counts = np.unique(PG_coor, axis=0, return_counts=True)
-        dup = np.where(counts > 1)[0]
-
-        if len(ind_badcoor) == 0 and len(dup) == 0:
-            break  # Exit if no bad coordinates and no duplicates
-
-        if len(ind_badcoor) > 0:  # Replace bad coordinates
-            PG_coor[ind_badcoor] = np.random.choice(
-                px * hr_coeff, size=(len(ind_badcoor), 2), replace=False
-            )
-            it = np.ravel_multi_index(PG_coor.T, data_main.shape)
-            coor_verif = flat_data_main[it]
-
-        # Overlap detection
-        dist_matrix = np.sqrt(
-            (PG_coor[:, 0, None] - PG_coor[:, 0]) ** 2
-            + (PG_coor[:, 1, None] - PG_coor[:, 1]) ** 2
-        )
-        overlap_matrix = dist_matrix < (radius[:, None] + radius[None, :])
-        np.fill_diagonal(overlap_matrix, False)  # Ignore self-comparison
-
-        if overlap_matrix.any():
-            overlap_indices = np.argwhere(overlap_matrix)
-            for i in overlap_indices:
-                PG_coor[i[0], :] = np.random.choice(
-                    px * hr_coeff, size=(1, 2), replace=False
-                )
-                it = np.ravel_multi_index(PG_coor.T, data_main.shape)
-                coor_verif = flat_data_main[it]
-
-        ct += 1
-        if ct > 10:
-            print("Overloop", ct)
-            break
-
-    mask_PG = create_circular_mask_multiple(
-        px * hr_coeff, px * hr_coeff, center=PG_coor, radius=radius
-    )
-    imhr_ini = np.copy(data)  # Copy the HR images to avoid alteration
-
-    return imhr_ini, PG_coor, radius, mask_PG
 
 
 # %% Isotopic ratio extraction function
@@ -150,10 +48,7 @@ def Iso_Ratio(elem):
     return R
 
 
-def approx_poisson(data):
-    mean = data
-    std_dev = np.sqrt(data)
-    return np.random.normal(mean, std_dev).astype(int)
+# approx_poisson function moved to synthetic_image_generator.py module
 
 
 # GD_AdamNesperov function moved to gradient_descent.py module
@@ -287,15 +182,15 @@ def PG_simulationv6(
     )  # Interpolate into larger dimensions (here from 256x256 px to 2064x2064 px)
 
     # Original PG coordinates
-    if "OG_grain" in globals():
+    if OG_grain is not None:
         OG_PG_center = [OG_grain.ROIX.item(), OG_grain.ROIY.item()]
         m = create_circular_mask(
             px * hr_coeff,
             px * hr_coeff,
             center=OG_PG_center,
-            radius=int(OG_grain.ROIDIAM / (2 * raster) * px * hr_coeff),
+            radius=int(OG_grain.ROIDIAM.iloc[0] / (2 * raster) * px * hr_coeff),
         )
-        ind_OG_PG = np.argwhere(m is True)
+        ind_OG_PG = np.argwhere(m == True)
     else:
         ind_OG_PG = []
 
@@ -303,59 +198,25 @@ def PG_simulationv6(
     imhr_ini, PG_coor, radius, mask_PG = PG_coor_mask(
         px, hr_coeff, Nb_PG, extracted_cts, th, ind_OG_PG, PG_size, raster
     )
-    imhr_ini_PG = np.copy(imhr_ini)  # Copying the modified images
 
-    ####---- Modifying maps counts on location of presolar grains
+    ####---- Modifying maps counts on location of presolar grains and generating synthetic image
     PG_delta = np.insert(
         PG_delta[0], 0, [0, 0], axis=0
     )  # Ensures the non PG areas remain solar
-    R_minor = np.asarray(R[1::])
-    imhr_ini_PG[mask_PG != 0, 1::] = (
-        extracted_cts[mask_PG != 0, 0][:, None]
-        * np.take((PG_delta * 1e-3 + 1) * R_minor, mask_PG, axis=0)[mask_PG != 0, :]
+
+    # Generate synthetic image with beam blur and boxcar smoothing
+    imgauss_PG, imboxcar_PG = generate_synthetic_image(
+        extracted_cts,
+        PG_coor,
+        mask_PG,
+        PG_delta,
+        R,
+        px,
+        hr_coeff,
+        beam_size,
+        raster,
+        boxcar_px,
     )
-
-    ####---- Beam blurr and Boxcar definitions
-
-    # Defining the sigma parameters of the gaussian blurr
-    # sig_gaussian=beam_size/(np.sqrt(8*np.log(2))) or beam_size/2.35
-    fwhm_hr = (
-        np.round((beam_size * 1e-3) / (raster / (px * hr_coeff))) / 2
-    )  # the gaussian filter uses the given sigma as a radius for kernel size if radius is not specified
-    # fwhm_hr=np.round((beam_size*1E-3)/(raster/(px)))
-    # sig_gaussian = fwhm_hr / (np.sqrt(8 * np.log(2)))
-
-    ####---- Beam blurr and Boxcar smoothing
-    # Two options :
-    # 1. A new image is created for each isotopes from the original ones. Each pixel value is used as a mean for a poisson distribution of which a new pixel value is interpolated. Then the images are beam blurred and boxcar smoothed.
-    # 2. We started by applying the gaussian blurr before interpolation new values from a poisson distribution for each pixel of each isotope image. Then the image is boxcar smoothed.
-
-    # Poissonian random pixel using numpy
-    # im_poiss = np.random.poisson(imhr_ini_PG) # Simulation including the presolar grains
-
-    # Poissonian random pixel using approximation function (Most efficient method)
-    im_poiss = approx_poisson(imhr_ini_PG)
-
-    # # Poissonian random pixel using GPU for parallelism
-    # # Convert the NumPy array to a CuPy array
-    # imhr_ini_PG_gpu = cp.asarray(imhr_ini_PG)
-    # # Apply Poisson sampling on the GPU
-    # result_gpu = cp.random.poisson(imhr_ini_PG_gpu)
-    # # Convert back to NumPy if needed
-    # im_poiss = cp.asnumpy(result_gpu)
-
-    # ----- Image size reduction with beam blurr then boxcar
-    gauss_ker = np.round(fwhm_hr * 2).astype(int)
-    if gauss_ker % 2 != 1:
-        gauss_ker = gauss_ker + 1
-    boxcar_ker = np.ones((boxcar_px, boxcar_px)) / boxcar_px**2
-    imgauss_PG = cv2.GaussianBlur(
-        im_poiss * 1.0, (gauss_ker, gauss_ker), 0
-    )  # int32 are not supported by open cv
-    imgauss_PG = cv2.resize(imgauss_PG, (px, px), 0, 0)
-    imboxcar_PG = cv2.filter2D(imgauss_PG, cv2.CV_64F, boxcar_ker)
-    imgauss_PG.astype(int)  # Images are counts so integers
-    imboxcar_PG.astype(int)
 
     ####---- Masking low counts regions
     cts_th = int(
@@ -461,6 +322,7 @@ def PG_simulationv6(
         # for i in range(0, 3):
         #     imboxcar_PG_OG[:, :, i] = ap_convolve(realcts_OG[:, :, i], box_kernel_OG, boundary='fill', fill_value=0.0)
 
+        boxcar_ker = np.ones((boxcar_px, boxcar_px)) / boxcar_px**2
         imboxcar_PG_OG = cv2.filter2D(realcts_OG, cv2.CV_64F, boxcar_ker)
         imboxcar_PG_OG.astype(int)
 
