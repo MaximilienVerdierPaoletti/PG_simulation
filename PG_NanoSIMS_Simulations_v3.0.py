@@ -35,7 +35,6 @@ import matplotlib
 import matplotlib.pyplot as plt  # Enables plotting of data
 from mpl_toolkits import mplot3d
 from matplotlib.backends.backend_pdf import PdfPages
-import skimage.measure
 from matplotlib.lines import Line2D
 from matplotlib import cm
 import time
@@ -47,7 +46,6 @@ import pstats
 from tqdm import tqdm
 
 from PG_simulations_func import PG_simulationv6
-from synthetic_image_generator import create_circular_mask
 from gradient_descent import (
     GD_AdamNesperov,
     initialize_gradient_descent_parameters,
@@ -55,6 +53,10 @@ from gradient_descent import (
     apply_simulation_constraints,
     save_norm_to_summary,
     compute_cost,
+)
+from feature_extraction import (
+    select_sigma_delta_maps,
+    extract_grain_features,
 )
 
 # plt.ioff()
@@ -327,75 +329,40 @@ if __name__ == "__main__":
                         ax = ax.ravel()
 
                         # Sigma and Delta map selection based on anomalous ratio
-                        ind_anomalous = np.argmax(
-                            np.abs(grain_delta)
-                        )  # Locate most anomalous ratio. It will be the one used for contouring
-                        anomalous_ratio_name = grain_delta.columns[
-                            ind_anomalous
-                        ].replace("d-", "")
-                        sigma_map_index = [
-                            plots_title.index(n) for n in plots_title if "Sigma" in n
-                        ]
-                        delta_map_index = [
-                            plots_title.index(n) for n in plots_title if "Delta" in n
-                        ]
-                        sigma_anomalous_map_index = [
-                            sigma_map_index.index(n)
-                            for n in sigma_map_index
-                            if anomalous_ratio_name in plots_title[n]
-                        ]
-                        delta_anomalous_map_index = [
-                            delta_map_index.index(n)
-                            for n in delta_map_index
-                            if anomalous_ratio_name in plots_title[n]
-                        ]
-                        sigma_map = [plots[n] for n in sigma_map_index]
-                        delta_map = [plots[n] for n in delta_map_index]
+                        (
+                            sigma_map,
+                            delta_map,
+                            sigma_anomalous_map_index,
+                            delta_anomalous_map_index,
+                            anomalous_ratio_name,
+                        ) = select_sigma_delta_maps(plots, plots_title, grain_delta)
 
                         for i in range(0, PG_size.shape[1]):  # Simulation on grains
-                            radius = (
-                                (np.asarray(PG_size[u, i]) / 2)
-                                * 1e-3
-                                / (raster / px)
-                                * 1.5
-                            )
-                            mask = create_circular_mask(
+                            # Extract features for this grain
+                            (
+                                Diam,
+                                delta_values,
+                                mask,
+                                mask_th,
+                                (xsel, ysel),
+                                (x, y),
+                            ) = extract_grain_features(
+                                PG_size[u, :],
+                                PG_coor,
+                                raster,
                                 px,
-                                px,
-                                center=np.floor_divide(PG_coor, 8)[i],
-                                radius=radius,
-                            )  # Mask creation of the grains' pixels
-                            contour = skimage.measure.find_contours(mask != 0, 0.5)
-
-                            ysel, xsel = contour[0].T
-
-                            x, y = np.nonzero(mask)
-                            I = np.where(
-                                sigma_map[sigma_anomalous_map_index[0]][x, y].data
-                                >= sigma_map[sigma_anomalous_map_index[0]][
-                                    x, y
-                                ].data.max()
-                                * sig_r
-                            )
-                            X = x[I]
-                            Y = y[I]
-                            mask_th = np.zeros_like(mask)
-                            mask_th[X, Y] = 1
-
-                            Diam = (
-                                np.sqrt(
-                                    len(delta_map[delta_anomalous_map_index[0]][X, Y])
-                                    * ((raster / px) ** 2)
-                                    / np.pi
-                                )
-                                * 1000
-                                * 2
+                                sig_r,
+                                sigma_map,
+                                delta_map,
+                                sigma_anomalous_map_index,
+                                delta_anomalous_map_index,
+                                i,
                             )
 
                             axres[k].plot(
                                 Diam,
-                                np.mean(delta_map[0][X, Y]),
-                                np.mean(delta_map[1][X, Y]),
+                                delta_values[0],
+                                delta_values[1],
                                 "o",
                                 color=c[i],
                                 markersize=10,
@@ -403,15 +370,13 @@ if __name__ == "__main__":
                             )
                             axres[k + iterations].plot(
                                 Diam,
-                                np.mean(delta_map[0][X, Y]),
-                                np.mean(delta_map[1][X, Y]),
+                                delta_values[0],
+                                delta_values[1],
                                 "o",
                                 color=c[i],
                                 markersize=10,
                                 alpha=0.5,
                             )
-                            contour = skimage.measure.find_contours(mask_th == 1, 0.5)
-                            y, x = contour[0].T
                             ax = ax.ravel()
                             for h in range(0, len(ax)):
                                 ax[h].plot(xsel, ysel, "--", color="w", linewidth=2)
@@ -432,8 +397,8 @@ if __name__ == "__main__":
                                     PG_size[u, i],
                                     sig_r,
                                     Diam,
-                                    np.round(np.mean(delta_map[0][X, Y]), 2),
-                                    np.round(np.mean(delta_map[1][X, Y]), 2),
+                                    np.round(delta_values[0], 2),
+                                    np.round(delta_values[1], 2),
                                 ]
                             )
                             S = S.to_frame().T
