@@ -8,4 +8,5 @@ opencv-python>=4.5.0
 astropy>=5.0.0
 sims
 tqdm>=4.60.0
+customtkinter>=5.0.0
 

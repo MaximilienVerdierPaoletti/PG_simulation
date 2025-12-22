@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "astropy>=5.0.0",
+    "customtkinter>=5.2.2",
     "ipython>=7.0.0",
     "matplotlib>=3.3.0",
     "numpy>=1.20.0",

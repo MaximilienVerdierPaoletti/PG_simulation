@@ -26,6 +26,8 @@ Refactored into functions for GUI integration
 
 # %% Modules
 
+import sys
+
 try:
     from IPython import get_ipython
 
@@ -46,29 +48,39 @@ from Modules.pg_simulation_core import process_all_grains
 # ============================================================================
 
 if __name__ == "__main__":
-    # Create default configuration
-    config = create_default_config()
+    # Check if GUI mode is requested
+    use_gui_app = "--gui" in sys.argv or "-g" in sys.argv
 
-    # Optionally modify config here
-    # config["Nb_PG"] = 9
-    # config["iterations"] = 1
-    # etc.
+    if use_gui_app:
+        # Launch GUI application
+        from gui_app import main
 
-    # ========================================================================
-    # PROFILING CONFIGURATION
-    # Set ENABLE_PROFILING to True to enable profiling
-    # ========================================================================
-    config["ENABLE_PROFILING"] = False  # Set to True to enable profiling
-    config["PROFILING_OUTPUT_DIR"] = "profiling_results"
+        main()
+    else:
+        # Command-line mode with default configuration
+        # Create default configuration
+        config = create_default_config()
 
-    # ========================================================================
-    # PLOT SAVING CONFIGURATION
-    # Set SAVE_ALL_PLOTS to False to save only: original data, 3D plots, and
-    # gradient descent parameter evolution plots (excludes simulation plots)
-    # ========================================================================
-    config["SAVE_ALL_PLOTS"] = False  # Set to True to save all simulation plots
+        # Optionally modify config here
+        # config["Nb_PG"] = 9
+        # config["iterations"] = 1
+        # etc.
 
-    # Process all grains
-    summary, match_summary, data_res, all_simulations = process_all_grains(
-        file_list=None, data=None, config=config, use_gui=True
-    )
+        # ========================================================================
+        # PROFILING CONFIGURATION
+        # Set ENABLE_PROFILING to True to enable profiling
+        # ========================================================================
+        config["ENABLE_PROFILING"] = False  # Set to True to enable profiling
+        config["PROFILING_OUTPUT_DIR"] = "profiling_results"
+
+        # ========================================================================
+        # PLOT SAVING CONFIGURATION
+        # Set SAVE_ALL_PLOTS to False to save only: original data, 3D plots, and
+        # gradient descent parameter evolution plots (excludes simulation plots)
+        # ========================================================================
+        config["SAVE_ALL_PLOTS"] = False  # Set to True to save all simulation plots
+
+        # Process all grains
+        summary, match_summary, data_res, all_simulations, f_OG = process_all_grains(
+            file_list=None, data=None, config=config, use_gui=True
+        )

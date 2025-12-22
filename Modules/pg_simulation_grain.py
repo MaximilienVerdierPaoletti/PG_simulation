@@ -148,6 +148,8 @@ def process_single_simulation_iteration(
         Updated summary with new simulation results
     all_simulations : dict
         Updated simulations dictionary
+    f_OG : matplotlib.figure.Figure or None
+        Original grain figure (only on first iteration)
     """
     verif = 1 if (k == 0) & (j == 0) else 0
 
@@ -195,9 +197,7 @@ def process_single_simulation_iteration(
             )
         )
 
-        plot_simulated_grain(
-            axres, k, iterations, Diam, delta_values, c, i
-        )
+        plot_simulated_grain(axres, k, iterations, Diam, delta_values, c, i)
 
         for h in range(0, len(ax)):
             ax[h].plot(xsel, ysel, "--", color="w", linewidth=2)
@@ -251,7 +251,7 @@ def process_single_simulation_iteration(
     for im_it in range(0, len(plots_title)):
         all_simulations[imagename][k][j][plots_title[im_it]] = plots[im_it]
 
-    return summary, all_simulations
+    return summary, all_simulations, f_OG
 
 
 def perform_gradient_descent_step(
@@ -352,6 +352,7 @@ def process_single_grain(
     point_inner, point_matchfinal, label_points = create_legend_elements()
     lines = []
     labels = []
+    f_OG_grain = None  # Will store the original grain figure
 
     for k in tqdm(
         range(0, config["iterations"]),
@@ -399,7 +400,7 @@ def process_single_grain(
                 pbar_inner.close()
                 break
 
-            summary, all_simulations = process_single_simulation_iteration(
+            summary, all_simulations, f_OG_iter = process_single_simulation_iteration(
                 file,
                 grain,
                 PG_size,
@@ -421,6 +422,10 @@ def process_single_grain(
                 config["iterations"],
                 c,
             )
+
+            # Capture f_OG from first iteration (k=0, j=0)
+            if k == 0 and j == 0 and f_OG_iter is not None:
+                f_OG_grain = f_OG_iter
 
             sim_selgrain = summary.loc[(summary["Grain"] == grain.NAME.item())]
             sim_outerin = sim_selgrain.loc[
@@ -582,5 +587,5 @@ def process_single_grain(
         closest_match_final,
         data_res,
         grain_counter,
+        f_OG_grain,
     )
-

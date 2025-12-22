@@ -63,6 +63,7 @@ def process_all_grains(file_list, data, config, use_gui=True):
     )
     norm_summary = None
     all_simulations = {}
+    f_OG_result = None  # Store the first f_OG figure
 
     # Setup profiling
     pr = setup_profiling(config["ENABLE_PROFILING"], config["PROFILING_OUTPUT_DIR"])
@@ -129,6 +130,7 @@ def process_all_grains(file_list, data, config, use_gui=True):
                 closest_match_final,
                 grain_data_res,
                 grain_counter,
+                f_OG_grain,
             ) = process_single_grain(
                 file,
                 grain,
@@ -159,6 +161,10 @@ def process_all_grains(file_list, data, config, use_gui=True):
                 data_res = grain_data_res
             else:
                 data_res = pd.concat([data_res, grain_data_res], ignore_index=True)
+            
+            # Store first f_OG figure (or use the latest one)
+            if f_OG_grain is not None:
+                f_OG_result = f_OG_grain
 
     plt.ion()
     plt.show()
@@ -174,5 +180,5 @@ def process_all_grains(file_list, data, config, use_gui=True):
     # Stop profiling
     stop_profiling(pr, config["PROFILING_OUTPUT_DIR"])
 
-    return summary, match_summary, data_res, all_simulations
+    return summary, match_summary, data_res, all_simulations, f_OG_result
 
