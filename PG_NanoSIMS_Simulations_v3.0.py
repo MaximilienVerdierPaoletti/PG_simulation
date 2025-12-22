@@ -87,7 +87,7 @@ if __name__ == "__main__":
     # Set SAVE_ALL_PLOTS to False to save only: original data, 3D plots, and
     # gradient descent parameter evolution plots (excludes simulation plots)
     # ========================================================================
-    SAVE_ALL_PLOTS = True  # Set to False to save only essential plots
+    SAVE_ALL_PLOTS = False  # Set to False to save only essential plots
 
     # Create profiling output directory if it doesn't exist
     if ENABLE_PROFILING:
