@@ -325,6 +325,7 @@ def process_single_grain(
     pbar_overall,
     grain_counter,
     total_grains,
+    progress_callback=None,
 ):
     """
     Process a single grain through all iterations.
@@ -565,6 +566,10 @@ def process_single_grain(
     grain_counter += 1
     pbar_overall.update(1)
     pbar_overall.set_postfix({"completed": f"{grain_counter}/{total_grains}"})
+    
+    # Call progress callback if provided (for GUI updates)
+    if progress_callback is not None:
+        progress_callback()
 
     finalize_result_figures(
         fres,

@@ -27,7 +27,7 @@ from Modules.pg_simulation_results import save_results
 matplotlib.rcParams["interactive"] = False
 
 
-def process_all_grains(file_list, data, config, use_gui=True):
+def process_all_grains(file_list, data, config, use_gui=True, progress_callback=None):
     """
     Main function to process all grains from files.
 
@@ -41,6 +41,8 @@ def process_all_grains(file_list, data, config, use_gui=True):
         Configuration dictionary
     use_gui : bool
         Whether to use GUI for file selection
+    progress_callback : callable, optional
+        Callback function to call when progress is updated (after each grain)
 
     Returns:
     --------
@@ -147,6 +149,7 @@ def process_all_grains(file_list, data, config, use_gui=True):
                 pbar_overall,
                 grain_counter,
                 total_grains,
+                progress_callback=progress_callback,
             )
 
             # Accumulate results

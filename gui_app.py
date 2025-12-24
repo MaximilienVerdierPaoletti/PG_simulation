@@ -53,9 +53,6 @@ class PGSimulationGUI(ctk.CTk):
 
     def create_widgets(self):
         """Create and layout all GUI widgets."""
-        # Top toolbar
-        self.create_toolbar()
-
         # Main container - sidebar + main area
         self.main_container = ctk.CTkFrame(self)
         self.main_container.pack(fill="both", expand=True, padx=10, pady=10)
@@ -74,18 +71,6 @@ class PGSimulationGUI(ctk.CTk):
 
         # Create graph widgets
         self.create_graph_widgets()
-
-    def create_toolbar(self):
-        """Create top toolbar."""
-        toolbar = ctk.CTkFrame(self)
-        toolbar.pack(fill="x", padx=10, pady=5)
-
-        title_label = ctk.CTkLabel(
-            toolbar,
-            text="PG NanoSIMS Simulation v3.0",
-            font=ctk.CTkFont(size=20, weight="bold"),
-        )
-        title_label.pack(side="left", padx=10)
 
     def create_config_widgets(self):
         """Create configuration widgets in config panel."""
@@ -250,11 +235,156 @@ class PGSimulationGUI(ctk.CTk):
             self.original_placeholder.pack(expand=True)
 
     def update_results_graph(self):
-        """Update the results graph."""
+        """Update the results graph with iteration results."""
         self.results_fig.clear()
         ax = self.results_fig.add_subplot(111, projection="3d")
 
-        if self.simulation_results["data_res"] is not None:
+        if self.simulation_results["summary"] is not None:
+            summary = self.simulation_results["summary"]
+
+            # Extract columns for 3D plot
+            size_col = "Measured diameter (nm)"
+            delta_cols = []
+
+            # Find delta columns (e.g., "Measured d-17O/16O", "Measured d-18O/16O")
+            for col in summary.columns:
+                if col.startswith("Measured") and "d-" in col:
+                    delta_cols.append(col)
+
+            if size_col in summary.columns and len(delta_cols) >= 2:
+                # Import for color mapping
+                import matplotlib.cm as cm
+                import numpy as np
+
+                # Plot target values as black squares if original_data is available
+                if (
+                    self.simulation_results["original_data"] is not None
+                    and "Grain" in summary.columns
+                ):
+                    original_data = self.simulation_results["original_data"]
+                    # Get element for delta column matching
+                    elem = self.config.get("elem", "O")
+
+                    # Find delta columns in original data
+                    orig_delta_cols = [
+                        col
+                        for col in original_data.columns
+                        if col.startswith("d-") and elem in col
+                    ]
+
+                    # Get unique grains from summary
+                    unique_grains = summary["Grain"].unique()
+
+                    for grain_name in unique_grains:
+                        # Find matching grain in original data (exact match or contains)
+                        grain_data = original_data[original_data["NAME"] == grain_name]
+                        # If no exact match, try contains
+                        if grain_data.empty:
+                            grain_data = original_data[
+                                original_data["NAME"].str.contains(grain_name, na=False)
+                            ]
+                        if not grain_data.empty:
+                            grain_row = grain_data.iloc[0]
+                            # Get grain size (ROIDIAM is in micrometers, convert to nm)
+                            if "ROIDIAM" in grain_row.index:
+                                target_size = (
+                                    grain_row["ROIDIAM"] * 1000
+                                )  # Convert to nm
+                            else:
+                                continue
+
+                            # Get target delta values
+                            if len(orig_delta_cols) >= 2:
+                                target_delta1 = grain_row[orig_delta_cols[0]]
+                                target_delta2 = grain_row[orig_delta_cols[1]]
+
+                                # Plot target as black square
+                                ax.scatter(
+                                    target_size,
+                                    target_delta1,
+                                    target_delta2,
+                                    c="black",
+                                    marker="s",
+                                    s=100,
+                                    alpha=1.0,
+                                    zorder=10,
+                                )
+
+                # Color by simulated grain index
+                if "Simulated grain index" in summary.columns:
+                    # Get all unique simulated grain indices for color mapping
+                    unique_grain_indices = sorted(
+                        summary["Simulated grain index"].unique()
+                    )
+
+                    # Create color map based on simulated grain index
+                    if len(unique_grain_indices) > 1:
+                        colors = cm.rainbow(
+                            np.linspace(0, 1, len(unique_grain_indices))
+                        )
+                    else:
+                        colors = ["blue"]
+
+                    # Plot all data points colored by simulated grain index
+                    for grain_idx, sim_grain_idx in enumerate(unique_grain_indices):
+                        grain_data = summary[
+                            summary["Simulated grain index"] == sim_grain_idx
+                        ]
+
+                        sizes = grain_data[size_col].values
+                        delta1 = grain_data[delta_cols[0]].values
+                        delta2 = grain_data[delta_cols[1]].values
+
+                        # Color based on simulated grain index
+                        color = (
+                            colors[grain_idx]
+                            if len(unique_grain_indices) > 1
+                            else colors[0]
+                        )
+
+                        ax.scatter(
+                            sizes,
+                            delta1,
+                            delta2,
+                            c=[color],
+                            marker="o",
+                            s=50,
+                            alpha=0.6,
+                        )
+                else:
+                    # Fallback: plot all points without iteration distinction
+                    sizes = summary[size_col].values
+                    delta1 = summary[delta_cols[0]].values
+                    delta2 = summary[delta_cols[1]].values
+                    ax.scatter(
+                        sizes, delta1, delta2, c="blue", marker="o", s=50, alpha=0.6
+                    )
+
+                ax.set_xlabel("Diameter (nm)", fontsize=10)
+                ax.set_ylabel(delta_cols[0], fontsize=10)
+                ax.set_zlabel(delta_cols[1], fontsize=10)
+                ax.set_title(
+                    "Simulation Results - All Iterations",
+                    fontsize=12,
+                    fontweight="bold",
+                )
+            else:
+                # Use 2D subplot for text message
+                ax.remove()
+                ax = self.results_fig.add_subplot(111)
+                ax.text(
+                    0.5,
+                    0.5,
+                    "Summary data available but insufficient columns for 3D plot.",
+                    ha="center",
+                    va="center",
+                    fontsize=10,
+                    transform=ax.transAxes,
+                )
+                ax.set_xticks([])
+                ax.set_yticks([])
+        elif self.simulation_results["data_res"] is not None:
+            # Fallback to data_res if summary is not available
             data_res = self.simulation_results["data_res"]
 
             # Extract columns for 3D plot
@@ -464,7 +594,7 @@ class PGSimulationGUI(ctk.CTk):
         ]
 
         self.delta_vars = {}
-        for (
+        for i, (
             range_name,
             start_key,
             stop_key,
@@ -472,7 +602,7 @@ class PGSimulationGUI(ctk.CTk):
             start_def,
             stop_def,
             step_def,
-        ) in ranges_info:
+        ) in enumerate(ranges_info, 1):
             range_frame = ctk.CTkFrame(delta_frame)
             range_frame.pack(fill="x", padx=10, pady=5)
 
@@ -611,6 +741,12 @@ class PGSimulationGUI(ctk.CTk):
         # Status label
         self.status_label = ctk.CTkLabel(button_frame, text="Ready", text_color="green")
         self.status_label.pack(pady=10)
+
+        # Progress bar
+        self.progress_bar = ctk.CTkProgressBar(button_frame, width=400)
+        self.progress_bar.pack(pady=10)
+        self.progress_bar.set(0)  # Initialize to 0
+        self.progress_bar.pack_forget()  # Hide initially
 
         # Buttons
         btn_frame = ctk.CTkFrame(button_frame)
@@ -852,12 +988,17 @@ class PGSimulationGUI(ctk.CTk):
         # Update status
         self.status_label.configure(text="Running simulation...", text_color="yellow")
 
+        # Show and reset progress bar
+        self.progress_bar.pack(pady=10)
+        self.progress_bar.set(0)
+
         # Store reference to run button for easier state management
         self.run_button_state = "disabled"
         self.disable_buttons()
 
         # Run simulation in a separate thread to avoid freezing GUI
         import threading
+        from Modules.pg_simulation_data import calculate_total_grains
 
         def run_in_thread():
             try:
@@ -865,13 +1006,35 @@ class PGSimulationGUI(ctk.CTk):
                 data = pd.read_excel(self.data_file, header=0)
                 data_filtered = data[~data.NAME.str.contains("Bulk")]
 
-                # Process all grains
+                # Calculate total grains for progress tracking
+                total_grains = calculate_total_grains(self.file_list, data_filtered)
+                current_progress = [
+                    0
+                ]  # Use list to allow modification in nested function
+
+                # Progress callback function
+                def update_progress():
+                    current_progress[0] += 1
+                    progress_value = (
+                        current_progress[0] / total_grains if total_grains > 0 else 0
+                    )
+                    self.after(0, lambda: self.progress_bar.set(progress_value))
+                    self.after(
+                        0,
+                        lambda: self.status_label.configure(
+                            text=f"Processing... {current_progress[0]}/{total_grains} grains",
+                            text_color="yellow",
+                        ),
+                    )
+
+                # Process all grains with progress callback
                 summary, match_summary, data_res, all_simulations, f_OG = (
                     process_all_grains(
                         file_list=self.file_list,
                         data=data_filtered,
                         config=config,
                         use_gui=False,
+                        progress_callback=update_progress,
                     )
                 )
 
@@ -885,6 +1048,9 @@ class PGSimulationGUI(ctk.CTk):
 
                 # Update status on main thread
                 self.after(
+                    0, lambda: self.progress_bar.set(1.0)
+                )  # Complete progress bar
+                self.after(
                     0,
                     lambda: self.status_label.configure(
                         text="Simulation completed successfully!", text_color="green"
@@ -897,8 +1063,15 @@ class PGSimulationGUI(ctk.CTk):
                 # Re-enable buttons
                 self.after(0, self.enable_buttons)
 
+                # Hide progress bar after a short delay
+                self.after(2000, lambda: self.progress_bar.pack_forget())
+
             except Exception as e:
                 error_msg = f"Simulation error: {str(e)}"
+                self.after(0, lambda: self.progress_bar.set(0))  # Reset progress bar
+                self.after(
+                    0, lambda: self.progress_bar.pack_forget()
+                )  # Hide progress bar
                 self.after(
                     0,
                     lambda: self.status_label.configure(
